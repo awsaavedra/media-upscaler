@@ -50,6 +50,22 @@ Local, open-source CLI upscaling for images and video; runs fully on-device (Ubu
 - Fail fast: all boundary validation at script entry; errors to stderr with non-zero exit
 - Model-agnostic: wrappers accept any `.pth` file path; no model names hardcoded in logic
 
+## Roadmap — hardware upgrades for highest-end output
+
+Current bottleneck: VRAM (4–8 GB on RTX 3050/3060 Ti) forces `--tile 512`, which can leave seam artifacts and blocks the largest model variants entirely.
+
+| Upgrade | Why | Impact |
+|---|---|---|
+| RTX 4090 (24 GB VRAM) | Eliminates tiling on images up to ~8K output; unlocks HAT-L and DAT-L (largest, highest-quality community models) | Highest — removes the primary quality ceiling |
+| RTX 4080 / 4070 Ti (16 GB VRAM) | Removes tiling on most real-world inputs; HAT-S/DAT-S run without tile seams | High |
+| 64 GB system RAM | AudioSR and longer video pipelines buffer more frames without paging | Medium — audio/video only |
+| NVMe SSD (PCIe 4.0+) | Video frame extraction and reassembly I/O; large batch image reads | Medium — throughput, not quality |
+
+**Priority order:** GPU VRAM → system RAM → storage.  
+Any RTX 40-series with ≥ 16 GB VRAM unlocks the full model stack (HAT-L, DAT-L, RealESRGAN x8) and removes tiling as a quality concern for images and video frames. Audio upscaling (AudioSR) gains the least from GPU upgrades specifically; it benefits more from RAM headroom.
+
+---
+
 ## Out of scope
 - Cloud upscaling services
 - GUI tools (Upscayl, Chainner — surveyed in original readme; not implemented here)
