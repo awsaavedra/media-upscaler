@@ -60,7 +60,19 @@ if [ "$FREE_KB" -lt 52428800 ]; then
   printf 'WARNING: < 50 GB free in %s — large encodes may exhaust disk\n' "$OUTDIR" >&2
 fi
 
-CMD=(video2x -i "$INPUT" -o "$OUTPUT" -p "$ENGINE" -s "$SCALE")
+# video2x 6.x API: map engine flag to processor + model args
+case $ENGINE in
+  realesrgan)
+    # realesrgan-plus is the general live-action model; default is anime-optimised
+    CMD=(video2x -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
+         -p realesrgan --realesrgan-model realesrgan-plus)
+    ;;
+  anime4k)
+    # anime4k is a libplacebo shader in 6.x, not a standalone processor
+    CMD=(video2x -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
+         -p libplacebo --libplacebo-shader anime4k-v4-a)
+    ;;
+esac
 
 if [ "$DRY_RUN" -eq 1 ]; then
   printf '%s\n' "${CMD[*]}"

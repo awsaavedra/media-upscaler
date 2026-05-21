@@ -64,29 +64,69 @@ sudo reboot
 
 ## Install Video2X
 
-Video2X provides static binary releases for Linux. Install steps:
+Video2X 6.x ships as an **AppImage** for Linux (no tarball). The AppImage requires `libfuse.so.2`; on systems where it is unavailable (WSL2, minimal Ubuntu installs), extract it instead.
+
+### Option A — native Ubuntu with FUSE (recommended)
+
+Install `libfuse2` once if needed, then run the AppImage directly:
 
 ```bash
-# 1. Create local install directory
+# Install FUSE if missing (Ubuntu 22.04+)
+sudo apt-get install -y libfuse2
+
+# Create dirs
 mkdir -p ~/.local/bin ~/.local/share/video2x
 
-# 2. Fetch latest release from https://github.com/k4yt3x/video2x/releases
-#    Download: video2x-linux-amd64.tar.gz (or the current Linux tarball name)
-#    Place in ~/.local/share/video2x/
+# Download latest AppImage (check https://github.com/k4yt3x/video2x/releases for current filename)
+curl -L -o ~/.local/share/video2x/Video2X-x86_64.AppImage \
+  https://github.com/k4yt3x/video2x/releases/download/6.4.0/Video2X-x86_64.AppImage
 
-# 3. Extract
+chmod +x ~/.local/share/video2x/Video2X-x86_64.AppImage
+
+# Symlink onto PATH
+ln -sf ~/.local/share/video2x/Video2X-x86_64.AppImage ~/.local/bin/video2x
+
+# Verify
+video2x --version
+```
+
+### Option B — WSL2 or no FUSE (extract AppImage)
+
+```bash
+mkdir -p ~/.local/bin ~/.local/share/video2x
+curl -L -o ~/.local/share/video2x/Video2X-x86_64.AppImage \
+  https://github.com/k4yt3x/video2x/releases/download/6.4.0/Video2X-x86_64.AppImage
+chmod +x ~/.local/share/video2x/Video2X-x86_64.AppImage
+
+# Extract (creates squashfs-root/ — no FUSE needed)
 cd ~/.local/share/video2x
-tar -xzf video2x-linux-amd64.tar.gz
+./Video2X-x86_64.AppImage --appimage-extract
 
-# 4. Symlink binary onto PATH
-ln -sf ~/.local/share/video2x/video2x ~/.local/bin/video2x
+# Symlink the extracted binary
+ln -sf ~/.local/share/video2x/squashfs-root/usr/bin/video2x ~/.local/bin/video2x
 
-# 5. Verify
 video2x --version
 ```
 
 > Release page: https://github.com/k4yt3x/video2x/releases
-> Confirm the tarball filename matches the latest release before running step 3.
+
+### Vulkan GPU prerequisite (native Ubuntu only)
+
+Video2X 6.x uses **Vulkan**, not CUDA directly. On native Ubuntu with an NVIDIA GPU, install the GL/Vulkan ICD matching your driver version:
+
+```bash
+# Check your driver version
+nvidia-smi | grep "Driver Version"
+
+# Install matching ICD (replace 590 with your major version)
+sudo apt-get install -y libnvidia-gl-590
+
+# Confirm GPU is visible to video2x
+video2x --list-devices
+# Should show your RTX GPU, not just llvmpipe (CPU)
+```
+
+> **WSL2 note:** NVIDIA Vulkan is not exposed to Linux in WSL2 by default. Run video2x on native Ubuntu for GPU acceleration.
 
 ---
 
@@ -234,16 +274,28 @@ Before merging the wrapper script:
 
 ## Implementation Sequence
 
-1. [ ] Run prerequisite checks (`nvidia-smi`, `ffmpeg -version`)
-2. [ ] Download and install Video2X binary from releases page
-3. [ ] Run `video2x --version` to confirm install
-4. [ ] Create `scripts/upscale-video.sh` from skeleton above
-5. [ ] `chmod +x scripts/upscale-video.sh`
-6. [ ] Acquire 30-second test clip
-7. [ ] Run smoke test
-8. [ ] Validate output with ffprobe
-9. [ ] Run error path tests
-10. [ ] Sign off on code review gates
+1. [x] Run prerequisite checks — `nvidia-smi` (driver 591.86, CUDA 13.1), `ffmpeg -version` (6.1.1), `df -h` (944 GB free)
+2. [x] Download Video2X 6.4.0 AppImage and install via extraction (WSL2 path; no FUSE)
+3. [x] `video2x --version` → confirmed 6.4.0
+4. [x] `scripts/upscale-video.sh` exists with full validation gates
+5. [x] Script updated for video2x **6.x API** (see note below)
+6. [ ] **On native Ubuntu:** install `libnvidia-gl-590` and confirm `video2x --list-devices` shows RTX GPU
+7. [ ] Acquire 30-second test clip (see `test-assets-vid-img-aud.md` — Big Buck Bunny recommended)
+8. [ ] Run smoke test: `./scripts/upscale-video.sh -n clip.mp4 /tmp/out.mp4` then real run
+9. [ ] Validate output with `ffprobe` (2× resolution, audio present, duration match)
+10. [ ] Run error path tests
+11. [ ] Sign off on code review gates
+
+### video2x 6.x API changes from original plan
+
+The 6.x release changed its CLI; `upscale-video.sh` has been updated to match:
+
+| Plan assumption | 6.x reality | Fix applied in script |
+|---|---|---|
+| `-p realesrgan` uses best general model | Default model is `realesr-animevideov3` (anime-optimised) | Now passes `--realesrgan-model realesrgan-plus` |
+| `-p anime4k` is a valid processor | `anime4k` is a libplacebo shader, not a processor | Engine `anime4k` now maps to `-p libplacebo --libplacebo-shader anime4k-v4-a` |
+| Install via `video2x-linux-amd64.tar.gz` | No tarball; ships as AppImage | Updated install steps above |
+| ncnn/CUDA backend | Vulkan backend (Vulkan ICD required for GPU) | Documented Vulkan prerequisite above |
 
 ---
 
@@ -253,3 +305,5 @@ Before merging the wrapper script:
 |---|---|---|---|---|---|
 | 2026-05-20 | Video2X over manual Real-ESRGAN+FFmpeg | End-to-end, fewer failure points, README primary recommendation | Working CLI pipeline with <30 min setup | 80% | After first real encode |
 | 2026-05-20 | Real-ESRGAN engine default (not Anime4K) | General video, not anime | Best quality on live-action footage | 85% | After test clip comparison |
+| 2026-05-20 | AppImage extraction over direct run | libfuse.so.2 unavailable in WSL2; `--appimage-extract` avoids FUSE entirely | Models found correctly via binary's real path | confirmed | — |
+| 2026-05-20 | Use `realesrgan-plus` model explicitly | 6.x changed default to anime model `realesr-animevideov3`; must override for live-action | Correct general-purpose output | confirmed | After first real encode |
