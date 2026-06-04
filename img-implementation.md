@@ -224,18 +224,22 @@ Custom `.pth` files (HAT, DAT variants) from community sources load directly via
 
 ## Implementation Sequence
 
-1. [ ] Run prerequisite checks (`nvidia-smi`, `python3 --version`, `git --version`)
-2. [ ] `sudo apt install -y libgl1 libglib2.0-0` (OpenCV headless deps)
-3. [ ] Clone Real-ESRGAN to `~/.local/share/realesrgan`
-4. [ ] Create venv, install deps (`torch`, `basicsr`, `facexlib`, `gfpgan`, requirements.txt)
-5. [ ] Pre-download `RealESRGAN_x4plus.pth` and `RealESRGAN_x4plus_anime_6B.pth`
-6. [ ] Run smoke test via `inference_realesrgan.py` directly
-7. [ ] Create `scripts/upscale-image.sh` from design above
-8. [ ] `chmod +x scripts/upscale-image.sh`
-9. [ ] Run smoke test through wrapper (`-n` dry run first)
-10. [ ] Run error path tests
-11. [ ] Run batch integrity check on a 5-image folder
-12. [ ] Sign off on code review gates
+1. [x] Prerequisite checks: `nvidia-smi` (driver 580.159.03), `python3` (3.12.3 via /usr/bin), `git` (2.43.0)
+2. [x] `libgl1` already installed; `libglib2.0-0` present as shared lib; no additional apt needed
+3. [x] Cloned Real-ESRGAN to `tools/realesrgan/` (local to repo, not `~/.local/share`)
+4. [x] Venv created with python3.12; torch 2.2.0+cu118, basicsr, facexlib, gfpgan installed; numpy pinned to <2 after all deps to avoid torch 2.2 / numpy 2.x incompatibility
+5. [x] `RealESRGAN_x4plus.pth` and `RealESRGAN_x4plus_anime_6B.pth` downloaded to `tools/realesrgan/weights/`
+6. [x] Inference smoke test: 320×240 → 1280×960 (4×); output 811 KB PNG confirmed
+7. [x] `scripts/upscale-image.sh` exists; updated to resolve `REALESRGAN_DIR` from `tools/realesrgan/`
+8. [x] Script is executable; `-n` dry run prints correct absolute paths
+9. [x] Real run smoke test passed: 320×240 input → 1280×960 output (4× confirmed via ffprobe)
+10. [ ] Run error path tests — pending
+11. [ ] Batch integrity check on a 5-image folder — pending
+12. [ ] Sign off on code review gates — pending
+
+> **Note:** Install is now fully local via `scripts/setup.sh`; no global `~/.local` writes.
+> Python 3.12 requires torch cu118 wheel; mise injects Python 3.14 so setup.sh explicitly uses `/usr/bin/python3.12`.
+> `basicsr` `functional_tensor` patch applied by setup.sh; numpy downgraded to <2 last to fix torch 2.2 C-extension incompatibility.
 
 ---
 

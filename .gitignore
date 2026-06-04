@@ -1,0 +1,25 @@
+# Local tool installations — large binaries, venvs, model weights
+tools/
+
+# Upscaled output
+output/
+results/
+test-assets/output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Model weight files
+*.pth
+*.onnx
+*.safetensors
+
+# Editor / OS
+.DS_Store
+*.swp
+*~

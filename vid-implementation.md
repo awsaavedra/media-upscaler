@@ -274,17 +274,20 @@ Before merging the wrapper script:
 
 ## Implementation Sequence
 
-1. [x] Run prerequisite checks — `nvidia-smi` (driver 591.86, CUDA 13.1), `ffmpeg -version` (6.1.1), `df -h` (944 GB free)
-2. [x] Download Video2X 6.4.0 AppImage and install via extraction (WSL2 path; no FUSE)
-3. [x] `video2x --version` → confirmed 6.4.0
-4. [x] `scripts/upscale-video.sh` exists with full validation gates
+1. [x] Run prerequisite checks — `nvidia-smi` (driver 580.159.03, CUDA 13.0), `ffmpeg -version` (6.1.1), `df -h` (39 GB free)
+2. [x] Download Video2X 6.4.0 AppImage and install via extraction (no libfuse2 on this system)
+3. [x] `video2x --version` → confirmed 6.4.0; RTX 3050 detected via Vulkan (libnvidia-gl-580 already installed)
+4. [x] `scripts/upscale-video.sh` exists with full validation gates; updated to use `tools/video2x/` local path
 5. [x] Script updated for video2x **6.x API** (see note below)
-6. [ ] **On native Ubuntu:** install `libnvidia-gl-590` and confirm `video2x --list-devices` shows RTX GPU
-7. [ ] Acquire 30-second test clip (see `test-assets-vid-img-aud.md` — Big Buck Bunny recommended)
-8. [ ] Run smoke test: `./scripts/upscale-video.sh -n clip.mp4 /tmp/out.mp4` then real run
-9. [ ] Validate output with `ffprobe` (2× resolution, audio present, duration match)
+6. [x] `libnvidia-gl-580` already installed; `nvidia_icd.json` present; RTX 3050 shows as Vulkan device 1
+7. [x] Synthetic test clip created: `test-assets/videos/test-clip.mp4` (10s, 320×180, 204 KB, CC-free)
+8. [x] Smoke test dry-run passes; real run in progress — GPU processing confirmed via Vulkan
+9. [ ] Validate output with `ffprobe` (4× resolution, audio present, duration match) — pending smoke test completion
 10. [ ] Run error path tests
 11. [ ] Sign off on code review gates
+
+> **Note:** `realesrgan-plus` model only ships as x4 in the AppImage; default scale changed to 4.
+> `scripts/setup.sh` automates the full local install into `tools/` within the repository.
 
 ### video2x 6.x API changes from original plan
 
@@ -307,3 +310,8 @@ The 6.x release changed its CLI; `upscale-video.sh` has been updated to match:
 | 2026-05-20 | Real-ESRGAN engine default (not Anime4K) | General video, not anime | Best quality on live-action footage | 85% | After test clip comparison |
 | 2026-05-20 | AppImage extraction over direct run | libfuse.so.2 unavailable in WSL2; `--appimage-extract` avoids FUSE entirely | Models found correctly via binary's real path | confirmed | — |
 | 2026-05-20 | Use `realesrgan-plus` model explicitly | 6.x changed default to anime model `realesr-animevideov3`; must override for live-action | Correct general-purpose output | confirmed | After first real encode |
+| 2026-06-03 | Install tools/ locally within repo | User requirement: no global installs; all tools in `tools/`; gitignored | Reproducible via `scripts/setup.sh` | confirmed | — |
+| 2026-06-03 | Wrapper shell script over symlink for video2x | AppImage extraction places binary at `squashfs-root/usr/bin/` but models at `squashfs-root/usr/share/video2x/models/`; video2x resolves `models/` relative to CWD; wrapper CDs to resource dir and absolutizes `-i`/`-o` paths first | Model files found correctly | confirmed | — |
+| 2026-06-03 | Default scale changed to 4 | `realesrgan-plus` model only ships as x4 in Video2X 6.4.0 AppImage; x2 variant not bundled; x4 is also the recommended quality setting for live-action | Single working default, no scale mismatch errors | confirmed | — |
+| 2026-06-03 | PyTorch 2.2.0 + torch cu118 + numpy<2 (downgraded after deps) | Python 3.12 cu118 oldest available is 2.2.0; numpy 2.x breaks torch 2.2 C extension; downgrading numpy after all deps resolves conflict (tifffile/opencv conflict warnings are non-fatal at inference level) | Real-ESRGAN inference runs | confirmed | After image smoke test |
+| 2026-06-03 | basicsr `functional_tensor` patch | torchvision 0.17 removed `torchvision.transforms.functional_tensor`; basicsr 1.4.2 imports it; one-line patch in `degradations.py` fixes import | basicsr imports cleanly | confirmed | — |

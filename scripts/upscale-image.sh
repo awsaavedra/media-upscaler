@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 SCALE=4
 MODEL=RealESRGAN_x4plus
 FORMAT=png
@@ -10,7 +13,7 @@ BATCH=0
 DRY_RUN=0
 JSON_OUT=0
 
-REALESRGAN_DIR="${REALESRGAN_DIR:-$HOME/.local/share/realesrgan}"
+REALESRGAN_DIR="${REALESRGAN_DIR:-$PROJECT_ROOT/tools/realesrgan}"
 INFERENCE_SCRIPT="$REALESRGAN_DIR/inference_realesrgan.py"
 VENV_PYTHON="$REALESRGAN_DIR/venv/bin/python"
 
@@ -69,7 +72,7 @@ nvidia-smi >/dev/null 2>&1 \
   || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
 
 [ -f "$VENV_PYTHON" ] \
-  || { printf 'Python venv not found at %s\n  Run install steps from img-implementation.md\n' "$VENV_PYTHON" >&2; exit 2; }
+  || { printf 'Python venv not found at %s\n  Run scripts/setup.sh to install\n' "$VENV_PYTHON" >&2; exit 2; }
 
 [ -f "$INFERENCE_SCRIPT" ] \
   || { printf 'inference_realesrgan.py not found at %s\n' "$INFERENCE_SCRIPT" >&2; exit 2; }

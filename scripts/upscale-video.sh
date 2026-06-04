@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCALE=2
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Prefer local install; allow override via env var or PATH fallback
+if [ -z "${VIDEO2X:-}" ]; then
+  if [ -f "$PROJECT_ROOT/tools/video2x/video2x" ]; then
+    VIDEO2X="$PROJECT_ROOT/tools/video2x/video2x"
+  elif command -v video2x >/dev/null 2>&1; then
+    VIDEO2X=video2x
+  fi
+fi
+
+SCALE=4
 ENGINE=realesrgan
 DRY_RUN=0
 JSON_OUT=0
@@ -44,7 +56,8 @@ case $SCALE in
 esac
 
 # Boundary checks — fail fast, surface errors early
-command -v video2x  >/dev/null 2>&1 || { printf 'video2x not found on PATH\n' >&2; exit 2; }
+[ -n "${VIDEO2X:-}" ] && [ -x "$VIDEO2X" ] \
+  || { printf 'video2x not found — run scripts/setup.sh or set VIDEO2X env var\n' >&2; exit 2; }
 command -v ffprobe  >/dev/null 2>&1 || { printf 'ffprobe not found on PATH (install ffmpeg)\n' >&2; exit 2; }
 nvidia-smi          >/dev/null 2>&1 || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
 
@@ -64,12 +77,12 @@ fi
 case $ENGINE in
   realesrgan)
     # realesrgan-plus is the general live-action model; default is anime-optimised
-    CMD=(video2x -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
+    CMD=("$VIDEO2X" -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
          -p realesrgan --realesrgan-model realesrgan-plus)
     ;;
   anime4k)
     # anime4k is a libplacebo shader in 6.x, not a standalone processor
-    CMD=(video2x -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
+    CMD=("$VIDEO2X" -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
          -p libplacebo --libplacebo-shader anime4k-v4-a)
     ;;
 esac
