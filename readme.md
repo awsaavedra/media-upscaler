@@ -89,25 +89,26 @@ The scripts scale by a fixed multiplier (4× default). Output resolution is enti
 
 **The bundled `realesrgan-plus` model in Video2X 6.4.0 is 4× only** — no 2× or 6× variant is included. To reach 1080p from a very low-res source you would need to run two passes or use a different model.
 
-## Real test media needed
+## Real test media
 
-The current test assets (`test-image.png`, `test-clip.mp4`) are synthetic — solid colors and gradients. Real-ESRGAN is trained on natural image degradation (blur, JPEG compression, noise); it produces little visible improvement on artificial inputs. To evaluate quality, use real degraded photos and video.
+`test-image.png` and `test-clip.mp4` are synthetic assets (gradients, solid colors). Real-ESRGAN is trained on natural image degradation; it produces little visible improvement on artificial inputs. Use the real media files for meaningful quality evaluation.
 
-**Sources for CC0 / public domain media:**
+**Fetch all four assets automatically:**
+```bash
+./scripts/download-test-media.sh          # download images + videos
+./scripts/download-test-media.sh --check  # verify files exist without downloading
+```
 
-| Source | Type | Notes |
-|---|---|---|
-| [Pixabay](https://pixabay.com) | Images + video | CC0; no attribution required |
-| [Pexels](https://pexels.com) | Images + video | Free license; no attribution required |
-| [Unsplash](https://unsplash.com) | Images | Unsplash license (free for use) |
-| [Internet Archive](https://archive.org/details/movies) | Video | Public domain films; good degraded-film test cases |
-| [Wikimedia Commons](https://commons.wikimedia.org) | Images + video | CC0 / public domain filter available |
-| [coverr.co](https://coverr.co) | Video | CC0 video clips |
+**Assets used (all public domain):**
 
-**Good test candidates:**
-- Old JPEG photos with visible compression artifacts (high-frequency detail lost)
-- 480p or 720p video clips with soft/blurry motion
-- Scanned documents or photos with film grain
+| File | Source | License | Dimensions |
+|---|---|---|---|
+| `test-assets/images/canal-street-1900s.jpg` | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Canal_Street_Bourbon_to_St_Chas_1900s.jpg) — Canal Street New Orleans 1900s | Public domain | 665×527 |
+| `test-assets/images/church-building-1906.jpg` | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:First_Saint_Rose_of_Lima_Roman_Catholic_Church_building_with_inset_of_Father_Henry_F._Murray_1906.jpg) — First Saint Rose Church 1906 | Public domain | 730×580 |
+| `test-assets/videos/prelinger-france-1947-30s.mp4` | [Internet Archive](https://archive.org/details/dph2646mbps640x480) — Prelinger Archives, Dorothy in France 1947 | Public domain | 640×480, 30 s |
+| `test-assets/videos/sf-market-street-1906-30s.mp4` | [Internet Archive](https://archive.org/details/san-francisco-market-street-in-1906-wsound-trac) — San Francisco Market Street 1906 | Public domain | 640×480, 30 s |
+
+ToS compliance: Internet Archive `robots.txt` only disallows `/control/` and `/report/`; downloads are fully allowed. Wikimedia upload CDN only disallows `/wikipedia/commons/archive/`; current files are fully allowed.
 
 **Do not commit test media to this repo.** Place files in `test-assets/images/` or `test-assets/videos/` — the gitignore blocks them. Only `test-image.png` and `test-clip.mp4` are tracked.
 

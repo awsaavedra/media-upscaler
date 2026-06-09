@@ -3,10 +3,12 @@
 #
 # Usage:
 #   ./scripts/test.sh              # fast tests only (~30 s)
-#   ./scripts/test.sh --integration  # + batch + output validation (~60 s)
+#   ./scripts/test.sh --integration  # + batch + video source validation (~2 min)
 #
 # Fast tests:  GPU checks, arg validation, dry-run format, single-image smoke.
-# Integration: 2-image batch, ffprobe validation of existing video output.
+# Integration: 2-image batch on real Wikimedia photographs, ffprobe validation
+#              of real Internet Archive source clips and any pre-rendered output.
+#              Run scripts/download-test-media.sh first to fetch real media.
 # Video encode is NOT run automatically (~38 min for 10 s clip); run manually:
 #   ./scripts/upscale-video.sh test-assets/videos/test-clip.mp4 output/video/test-clip-4x.mp4
 set -euo pipefail
@@ -134,35 +136,74 @@ printf '%s' "$VDRY" | grep -q 'realesrgan-plus' \
   && ok "video: dry run uses realesrgan-plus model (not anime default)" \
   || fail "video: dry run missing realesrgan-plus model"
 
-# ─── 8. INTEGRATION: IMAGE BATCH ────────────────────────────────────────────────
-printf '\n── Integration: image batch ──\n'
+# ─── 8. INTEGRATION: IMAGE BATCH (real Wikimedia photographs) ─────────────────
+# Uses canal-street-1900s.jpg (665×527) and church-building-1906.jpg (730×580)
+# — real JPEG photographs with grain and compression artifacts.
+# Run scripts/download-test-media.sh to fetch these files.
+printf '\n── Integration: image batch (real photographs) ──\n'
+REAL_IMG1="test-assets/images/canal-street-1900s.jpg"
+REAL_IMG2="test-assets/images/church-building-1906.jpg"
 if [ "$INTEGRATION" -eq 1 ]; then
-  BATCH_IN=$(mktemp -d)
-  BATCH_OUT=$(mktemp -d)
-  cp "$_TINY_IMG" "$BATCH_IN/a.png"
-  cp "$_TINY_IMG" "$BATCH_IN/b.png"
-  if scripts/upscale-image.sh -b "$BATCH_IN" "$BATCH_OUT" 2>/dev/null; then
-    OUT_COUNT=$(find "$BATCH_OUT" -name '*.png' | wc -l)
-    [ "$OUT_COUNT" -eq 2 ] \
-      && ok "image batch: 2 in → 2 out" \
-      || fail "image batch: expected 2 outputs, got $OUT_COUNT"
-    FIRST=$(find "$BATCH_OUT" -name '*.png' | head -1)
-    SZ=$(identify -format '%wx%h' "$FIRST" 2>/dev/null)
-    [ "$SZ" = "400x400" ] \
-      && ok "image batch: output dimensions 400×400 (4× confirmed)" \
-      || fail "image batch: expected 400×400, got $SZ"
+  if [ -f "$REAL_IMG1" ] && [ -f "$REAL_IMG2" ]; then
+    BATCH_IN=$(mktemp -d)
+    BATCH_OUT=$(mktemp -d)
+    cp "$REAL_IMG1" "$BATCH_IN/canal-street.jpg"
+    cp "$REAL_IMG2" "$BATCH_IN/church-building.jpg"
+    if scripts/upscale-image.sh -b "$BATCH_IN" "$BATCH_OUT" 2>/dev/null; then
+      OUT_COUNT=$(find "$BATCH_OUT" \( -name '*.png' -o -name '*.jpg' \) | wc -l)
+      [ "$OUT_COUNT" -eq 2 ] \
+        && ok "image batch: 2 real photographs in → 2 outputs" \
+        || fail "image batch: expected 2 outputs, got $OUT_COUNT"
+      FIRST=$(find "$BATCH_OUT" \( -name '*.png' -o -name '*.jpg' \) | head -1)
+      if [ -n "$FIRST" ]; then
+        FW=$(identify -format '%w' "$FIRST" 2>/dev/null || python3 -c \
+          "from PIL import Image; print(Image.open('$FIRST').width)" 2>/dev/null)
+        [ "${FW:-0}" -ge 2000 ] \
+          && ok "image batch: output width ${FW}px (≥4× from ~700px source)" \
+          || fail "image batch: expected output width ≥2000px, got ${FW}px"
+      fi
+    else
+      fail "image batch: inference exited non-zero"
+    fi
+    rm -rf "$BATCH_IN" "$BATCH_OUT"
   else
-    fail "image batch: inference exited non-zero"
+    fail "image batch: real media missing — run: scripts/download-test-media.sh"
   fi
-  rm -rf "$BATCH_IN" "$BATCH_OUT"
 else
-  skip "image batch (run with --integration)"
+  skip "image batch with real photographs (run with --integration)"
 fi
 
-# ─── 9. INTEGRATION: VALIDATE VIDEO OUTPUT ──────────────────────────────────────
-printf '\n── Integration: video output validation ──\n'
-VIDEO_OUT="output/video/test-clip-4x.mp4"
+# ─── 9. INTEGRATION: VALIDATE VIDEO SOURCE FILES ────────────────────────────────
+# Validates the downloaded Internet Archive source clips are real video files.
+# Does NOT run upscaling encode (too slow for automated tests).
+printf '\n── Integration: video source validation ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
+  for VID_SRC in \
+    "test-assets/videos/prelinger-france-1947-30s.mp4:640:480:25:35" \
+    "test-assets/videos/sf-market-street-1906-30s.mp4:640:480:25:35"
+  do
+    IFS=: read -r vpath exp_w exp_h min_dur max_dur <<< "$VID_SRC"
+    vname=$(basename "$vpath")
+    if [ -f "$vpath" ] && [ "$(stat -c%s "$vpath")" -gt 100000 ]; then
+      VW=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=width -of csv=p=0 "$vpath" 2>/dev/null)
+      VH=$(ffprobe -v error -select_streams v:0 \
+            -show_entries stream=height -of csv=p=0 "$vpath" 2>/dev/null)
+      VDUR=$(ffprobe -v error -show_entries format=duration \
+              -of csv=p=0 "$vpath" 2>/dev/null | cut -d. -f1)
+      [ "${VW:-0}" -eq "$exp_w" ] && [ "${VH:-0}" -eq "$exp_h" ] \
+        && ok "$vname: ${VW}×${VH} (expected ${exp_w}×${exp_h})" \
+        || fail "$vname: expected ${exp_w}×${exp_h}, got ${VW}×${VH}"
+      [ "${VDUR:-0}" -ge "$min_dur" ] && [ "${VDUR:-0}" -le "$max_dur" ] \
+        && ok "$vname: duration ${VDUR}s (expected ${min_dur}–${max_dur}s)" \
+        || fail "$vname: unexpected duration ${VDUR}s (expected ${min_dur}–${max_dur}s)"
+    else
+      fail "$vname: missing — run: scripts/download-test-media.sh"
+    fi
+  done
+
+  # Validate pre-rendered output if it exists
+  VIDEO_OUT="output/video/test-clip-4x.mp4"
   if [ -f "$VIDEO_OUT" ] && [ "$(stat -c%s "$VIDEO_OUT")" -gt 10000 ]; then
     W=$(ffprobe -v error -select_streams v:0 \
           -show_entries stream=width -of csv=p=0 "$VIDEO_OUT" 2>/dev/null)
@@ -173,19 +214,19 @@ if [ "$INTEGRATION" -eq 1 ]; then
     DUR=$(ffprobe -v error -show_entries format=duration \
           -of csv=p=0 "$VIDEO_OUT" 2>/dev/null | cut -d. -f1)
     [ "$W" -eq 1280 ] && [ "$H" -eq 720 ] \
-      && ok "video output: 1280×720 (4× from 320×180 source)" \
-      || fail "video output: expected 1280×720, got ${W}×${H}"
+      && ok "video upscaled output: 1280×720 (4× from 320×180 source)" \
+      || fail "video upscaled output: expected 1280×720, got ${W}×${H}"
     [ -n "$HAS_AUDIO" ] \
-      && ok "video output: audio stream present ($HAS_AUDIO)" \
-      || fail "video output: no audio stream"
+      && ok "video upscaled output: audio stream present ($HAS_AUDIO)" \
+      || fail "video upscaled output: no audio stream"
     [ "$DUR" -ge 9 ] && [ "$DUR" -le 11 ] \
-      && ok "video output: duration ${DUR}s (within 9–11 s of 10 s source)" \
-      || fail "video output: unexpected duration ${DUR}s"
+      && ok "video upscaled output: duration ${DUR}s (within 9–11 s)" \
+      || fail "video upscaled output: unexpected duration ${DUR}s"
   else
-    fail "video output: $VIDEO_OUT missing or too small — run the smoke test first"
+    skip "video upscaled output validation ($VIDEO_OUT not present)"
   fi
 else
-  skip "video output validation (run with --integration)"
+  skip "video source + output validation (run with --integration)"
 fi
 
 # ─── SUMMARY ────────────────────────────────────────────────────────────────────
