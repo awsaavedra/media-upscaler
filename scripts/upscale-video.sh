@@ -62,8 +62,11 @@ command -v ffprobe  >/dev/null 2>&1 || { printf 'ffprobe not found on PATH (inst
 nvidia-smi          >/dev/null 2>&1 || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
 
 [ -f "$INPUT" ] || { printf 'INPUT not found: %s\n' "$INPUT" >&2; exit 2; }
-ffprobe -v error -i "$INPUT" >/dev/null 2>&1 \
-  || { printf 'INPUT is not a valid video file: %s\n' "$INPUT" >&2; exit 2; }
+# Duration must be a numeric value — images report "N/A" and fail this check
+_DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$INPUT" 2>/dev/null)
+case $_DUR in
+  ''|N/A) printf 'INPUT is not a valid video file: %s\n' "$INPUT" >&2; exit 2 ;;
+esac
 
 OUTDIR=$(dirname "$OUTPUT")
 [ -w "$OUTDIR" ] || { printf 'OUTPUT directory not writable: %s\n' "$OUTDIR" >&2; exit 2; }
@@ -92,7 +95,41 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-"${CMD[@]}"
+# Progress bar — active when a terminal is attached; passes raw output through otherwise.
+_progress_bar() {
+  local tty=/dev/tty
+  [ -w "$tty" ] 2>/dev/null || tty=/dev/stderr
+  local w=40 line cur tot fps rem pct filled bar
+  while IFS= read -r line; do
+    # Strip ANSI escape codes and carriage returns
+    line=$(printf '%s' "$line" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g; s/\r//g; s/^\[K//')
+    if printf '%s' "$line" | grep -qE 'frame=[0-9]+/[0-9]+'; then
+      cur=$(printf '%s' "$line" | grep -oE 'frame=[0-9]+' | grep -oE '[0-9]+')
+      tot=$(printf '%s' "$line" | grep -oE '/[0-9]+[^0-9]' | head -1 | tr -dc '0-9')
+      fps=$(printf '%s' "$line" | grep -oE 'fps=[0-9.]+' | head -1 | cut -d= -f2)
+      rem=$(printf '%s' "$line" | grep -oE 'remaining=[0-9:]+' | head -1 | cut -d= -f2)
+      [ -n "$tot" ] && [ "$tot" -gt 0 ] && pct=$((cur * 100 / tot)) || pct=0
+      filled=$((pct * w / 100))
+      bar=$(printf '%*s' "$filled" '' | tr ' ' '=')$(printf '%*s' "$((w - filled))" '' | tr ' ' '-')
+      printf '\r  [%s] %3d%%  fps: %-5s  remaining: %-9s' \
+        "$bar" "$pct" "${fps:--}" "${rem:---:--:--}" >"$tty"
+    else
+      case $line in
+        *'[info]'*|*'[warning]'*|*'[error]'*)
+          printf '\n%s\n' "$line" >"$tty" ;;
+      esac
+    fi
+  done
+  printf '\n' >"$tty"
+}
+
+if [ -t 1 ] || [ -t 2 ]; then
+  "${CMD[@]}" 2>&1 | _progress_bar || true
+  _ec=${PIPESTATUS[0]}
+  [ "$_ec" -eq 0 ] || { printf 'video2x failed (exit %d)\n' "$_ec" >&2; exit "$_ec"; }
+else
+  "${CMD[@]}"
+fi
 
 if [ "$JSON_OUT" -eq 1 ]; then
   printf '{"input":"%s","output":"%s","engine":"%s","scale":%s}\n' \

@@ -17,16 +17,43 @@ Local, open-source CLI upscaling for images and video; runs fully on-device (Ubu
 - Shell: bash (POSIX)
 
 ## Commands
-- Upscale image: `./scripts/upscale-image.sh [-s SCALE] [-m MODEL] [-f FORMAT] [-t TILE] [-F] [-b] [-j] [-n] INPUT OUTPUT`
-- Upscale video: `./scripts/upscale-video.sh [-s SCALE] [-e ENGINE] [-j] [-n] INPUT OUTPUT`
-- Dry run (either): pass `-n` to print command without executing
-- GPU check: `nvidia-smi`
-- Disk check: `df -h .`
+```bash
+# Upscale a single image (4× default, PNG output)
+./scripts/upscale-image.sh photo.jpg output/images/
+
+# Upscale a directory of images
+./scripts/upscale-image.sh -b input-dir/ output/images/
+
+# Upscale video (4× default, realesrgan engine)
+./scripts/upscale-video.sh clip.mp4 output/video/clip-4x.mp4
+
+# Upscale with non-default options
+./scripts/upscale-image.sh -s 2 -m RealESRGAN_x2plus -f jpg photo.jpg out/
+./scripts/upscale-video.sh -e anime4k anime-clip.mp4 out/upscaled.mp4
+
+# Dry run — print command without executing
+./scripts/upscale-image.sh -n photo.jpg out/
+./scripts/upscale-video.sh -n clip.mp4 out/up.mp4
+
+# JSON summary on stdout (useful for scripting)
+./scripts/upscale-image.sh -j photo.jpg out/
+# → {"input":"photo.jpg","output":"out/","model":"RealESRGAN_x4plus","scale":4,"format":"png","files_written":1}
+
+# GPU readiness check (all 4 layers: driver, CUDA, torch, Vulkan)
+./scripts/check-gpu.sh
+
+# Run tests
+./scripts/test.sh               # fast (~30 s): GPU + arg validation + smoke
+./scripts/test.sh --integration # + batch + video output validation (~60 s)
+```
 
 ## Architecture
 - `scripts/` → POSIX shell wrappers; validate inputs, delegate to upstream tools
 - `scripts/upscale-image.sh` → image wrapper (Real-ESRGAN); exits 0/1/2/3
 - `scripts/upscale-video.sh` → video wrapper (Video2X); exits 0/1/2
+- `scripts/check-gpu.sh` → validates nvidia-smi, CUDA version, torch CUDA device, Vulkan ICD; exits 1 if any check fails
+- `scripts/test.sh` → test suite; `--integration` flag enables batch + video output tests
+- `test-assets/images/test-tiny.png` → 100×100 synthetic image used by fast smoke tests
 - `img-implementation.md` → full image setup plan, pre-mortem risks, test plan, model reference
 - `vid-implementation.md` → full video setup plan, pre-mortem risks, test plan
 - `local-upscaling-audio.md` → audio tool survey (AudioSR, DeepFilterNet); not yet implemented

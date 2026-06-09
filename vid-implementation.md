@@ -262,13 +262,14 @@ upscale-video.sh -s abc test.mp4 /tmp/out.mp4 # expect exit 1 or video2x error
 
 Before merging the wrapper script:
 
-- [ ] No infrastructure imports at logic layer (script has no hardcoded paths outside `$HOME/.local`)
-- [ ] All external dependencies validated at boundary (video2x, ffprobe, nvidia-smi checks at top)
-- [ ] No magic numbers (scale default named via variable)
-- [ ] SRP: script does one thing — validate inputs, delegate to video2x
-- [ ] POSIX-compliant flags (`-s`, `-e`, `-j`, `-n`, `-h`)
-- [ ] Exit codes: 0 = success, 1 = bad args, 2 = missing dependency/file
-- [ ] No interactive prompts; stderr for errors, stdout for output/JSON
+- [x] No infrastructure imports at logic layer — script has no hardcoded paths; uses `$PROJECT_ROOT/tools/video2x/` resolved at runtime; VIDEO2X env var override supported
+- [x] All external dependencies validated at boundary (video2x, ffprobe, nvidia-smi checks; numeric duration check distinguishes video from image/audio)
+- [x] No magic numbers — SCALE=4, ENGINE=realesrgan all named variables
+- [x] SRP: script validates inputs and delegates entirely to video2x; no inline frame processing
+- [x] POSIX-compliant flags (`-s`, `-e`, `-j`, `-n`, `-h`)
+- [x] Exit codes: 0 = success, 1 = bad args, 2 = missing dependency/file (confirmed by error path tests)
+- [x] No interactive prompts; all errors to stderr, JSON summary to stdout on `-j`
+- [x] Output resolution = 4× input — ffprobe confirmed 1280×720 (4× from 320×180)
 
 ---
 
@@ -282,9 +283,9 @@ Before merging the wrapper script:
 6. [x] `libnvidia-gl-580` already installed; `nvidia_icd.json` present; RTX 3050 shows as Vulkan device 1
 7. [x] Synthetic test clip created: `test-assets/videos/test-clip.mp4` (10s, 320×180, 204 KB, CC-free)
 8. [x] Smoke test dry-run passes; real run in progress — GPU processing confirmed via Vulkan
-9. [ ] Validate output with `ffprobe` (4× resolution, audio present, duration match) — pending smoke test completion
-10. [ ] Run error path tests
-11. [ ] Sign off on code review gates
+9. [x] Validate output with `ffprobe` — 1280×720 ✓ (4× from 320×180), aac audio ✓, 9.92 s duration ✓; confirmed Vulkan device: NVIDIA GeForce RTX 3050 Laptop GPU (0x25e2)
+10. [x] Run error path tests — all 5 paths pass (missing INPUT exit 2, image-as-INPUT exit 2 [bug fixed: was exit 0], unwritable OUTPUT exit 2, invalid ENGINE exit 1, invalid SCALE exit 1)
+11. [x] Sign off on code review gates — all gates pass; video inference test in scripts/test.sh --integration
 
 > **Note:** `realesrgan-plus` model only ships as x4 in the AppImage; default scale changed to 4.
 > `scripts/setup.sh` automates the full local install into `tools/` within the repository.
@@ -315,3 +316,4 @@ The 6.x release changed its CLI; `upscale-video.sh` has been updated to match:
 | 2026-06-03 | Default scale changed to 4 | `realesrgan-plus` model only ships as x4 in Video2X 6.4.0 AppImage; x2 variant not bundled; x4 is also the recommended quality setting for live-action | Single working default, no scale mismatch errors | confirmed | — |
 | 2026-06-03 | PyTorch 2.2.0 + torch cu118 + numpy<2 (downgraded after deps) | Python 3.12 cu118 oldest available is 2.2.0; numpy 2.x breaks torch 2.2 C extension; downgrading numpy after all deps resolves conflict (tifffile/opencv conflict warnings are non-fatal at inference level) | Real-ESRGAN inference runs | confirmed | After image smoke test |
 | 2026-06-03 | basicsr `functional_tensor` patch | torchvision 0.17 removed `torchvision.transforms.functional_tensor`; basicsr 1.4.2 imports it; one-line patch in `degradations.py` fixes import | basicsr imports cleanly | confirmed | — |
+| 2026-06-09 | Duration-based video detection in upscale-video.sh | `ffprobe -v error -i <png>` exits 0 (PNG is a valid ffprobe input); must check `format=duration` which returns "N/A" for images — switch to numeric duration check catches images, audio-only, and corrupt files | image-as-INPUT correctly exits 2 | confirmed | error path test run |

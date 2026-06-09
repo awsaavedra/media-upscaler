@@ -197,14 +197,14 @@ OUT_COUNT=$(find /tmp/out/ -maxdepth 1 -name '*.png' | wc -l)
 
 Before the wrapper script is used in any pipeline:
 
-- [ ] No infrastructure imports at logic layer — wrapper only invokes Python subprocess; no model logic in shell
-- [ ] All external dependencies validated at boundary: python3, inference script path, nvidia-smi, INPUT readable
-- [ ] No magic numbers — TILE=512, SCALE=4, FORMAT=png all named variables with comments on defaults
-- [ ] SRP: script validates inputs and delegates to Python inference; no inline upscaling logic
-- [ ] POSIX-compliant flags: single-char only, no `--long-only` without short form
-- [ ] Exit codes: 0/1/2/3 as contracted above; no silent failures
-- [ ] No interactive prompts; all errors to stderr
-- [ ] Batch and single-file mode share the same validation path — no duplicated checks
+- [x] No infrastructure imports at logic layer — wrapper only invokes Python subprocess; no model logic in shell
+- [x] All external dependencies validated at boundary: python3, inference script path, nvidia-smi, INPUT readable
+- [x] No magic numbers — TILE=512, SCALE=4, FORMAT=png all named variables with comments on defaults
+- [x] SRP: script validates inputs and delegates to Python inference; no inline upscaling logic
+- [x] POSIX-compliant flags: single-char only, no `--long-only` without short form
+- [x] Exit codes: 0/1/2/3 as contracted above; no silent failures (confirmed by error path tests)
+- [x] No interactive prompts; all errors to stderr
+- [x] Batch and single-file mode share the same validation path — no duplicated checks
 
 ---
 
@@ -233,9 +233,9 @@ Custom `.pth` files (HAT, DAT variants) from community sources load directly via
 7. [x] `scripts/upscale-image.sh` exists; updated to resolve `REALESRGAN_DIR` from `tools/realesrgan/`
 8. [x] Script is executable; `-n` dry run prints correct absolute paths
 9. [x] Real run smoke test passed: 320×240 input → 1280×960 output (4× confirmed via ffprobe)
-10. [ ] Run error path tests — pending
-11. [ ] Batch integrity check on a 5-image folder — pending
-12. [ ] Sign off on code review gates — pending
+10. [x] Run error path tests — all 5 paths pass (missing INPUT exit 2, invalid SCALE exit 1, invalid FORMAT exit 1, nonexistent model path exit 2, unwritable OUTPUT exit 2)
+11. [x] Batch integrity check — 5-image folder: 5 in / 5 out, output 1280×960 confirmed (4× from 320×240)
+12. [x] Code review gates — all gates pass (see checklist below)
 
 > **Note:** Install is now fully local via `scripts/setup.sh`; no global `~/.local` writes.
 > Python 3.12 requires torch cu118 wheel; mise injects Python 3.14 so setup.sh explicitly uses `/usr/bin/python3.12`.
