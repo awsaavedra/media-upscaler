@@ -16,22 +16,100 @@ Local, open-source CLI upscaling for images and video; runs fully on-device (Ubu
 - Runtime: Python 3.8+, CUDA 11.8+, NVIDIA driver ≥ 525
 - Shell: bash (POSIX)
 
-## Commands
+## Happy path — image upscaling
+
+Drop any JPEG or PNG anywhere and pass its path. No special folder required.
+
 ```bash
-# Upscale a single image (4× default, PNG output)
+# 1. Upscale a single photo
 ./scripts/upscale-image.sh photo.jpg output/images/
+```
 
-# Upscale a directory of images
-./scripts/upscale-image.sh -b input-dir/ output/images/
+While running you will see a progress bar in the terminal:
+```
+[========--------] 1/2  remaining: 00:00:42
+```
 
-# Upscale video (4× default, realesrgan engine)
-./scripts/upscale-video.sh clip.mp4 output/video/clip-4x.mp4
+On success the script exits 0 and prints nothing extra. The output file is at:
+```
+output/images/photo_out.png
+```
 
+```bash
+# 2. Verify the output dimensions are 4× the input
+identify -format '%f: %wx%h\n' photo.jpg output/images/photo_out.png
+# photo.jpg: 665x527
+# photo_out.png: 2660x2108
+```
+
+If `identify` is not installed, use Python:
+```bash
+python3 -c "
+from PIL import Image
+for p in ['photo.jpg', 'output/images/photo_out.png']:
+    i = Image.open(p); print(p, i.width, i.height)
+"
+```
+
+```bash
+# 3. Upscale a folder of images (batch)
+./scripts/upscale-image.sh -b test-assets/images/ output/images/
+# → output/images/ will contain one PNG per input file
+```
+
+## Happy path — video upscaling
+
+```bash
+# 1. Upscale a video clip (this takes a long time — ~38 min for a 10 s 320×180 clip on RTX 3050)
+./scripts/upscale-video.sh test-assets/videos/prelinger-france-1947-30s.mp4 output/video/prelinger-4x.mp4
+```
+
+Progress bar during encode:
+```
+[============----] 72%  fps=0.10  remaining: 00:42:15
+```
+
+```bash
+# 2. Verify output dimensions and duration
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width,height,codec_name \
+  -show_entries format=duration \
+  -of default=noprint_wrappers=1 output/video/prelinger-4x.mp4
+# width=2560
+# height=1920
+# codec_name=h264
+# duration=30.033333
+```
+
+The output width should be exactly 4× the input width (640 × 4 = 2560).
+
+## Where to put your own media
+
+The scripts accept any file path — you are not required to use `test-assets/`. However:
+
+| Purpose | Drop files here | Notes |
+|---|---|---|
+| Quick test (not committed) | `test-assets/images/` or `test-assets/videos/` | gitignored — safe to add anything |
+| Permanent input library | Any directory outside the repo | Pass the full path to the script |
+| Batch job | Any directory | Pass with `-b` flag |
+
+```bash
+# Any of these work
+./scripts/upscale-image.sh ~/Pictures/old-photo.jpg ~/Pictures/upscaled/
+./scripts/upscale-image.sh -b ~/Photos/album/ output/images/
+./scripts/upscale-video.sh /mnt/archive/family/home-movie.mp4 output/video/home-movie-4x.mp4
+```
+
+Files placed in `test-assets/images/` or `test-assets/videos/` are gitignored (except the two committed test files). Use that folder for anything you want to run without risking an accidental commit.
+
+## Commands
+
+```bash
 # Upscale with non-default options
 ./scripts/upscale-image.sh -s 2 -m RealESRGAN_x2plus -f jpg photo.jpg out/
 ./scripts/upscale-video.sh -e anime4k anime-clip.mp4 out/upscaled.mp4
 
-# Dry run — print command without executing
+# Dry run — print the exact command that would be run, without executing
 ./scripts/upscale-image.sh -n photo.jpg out/
 ./scripts/upscale-video.sh -n clip.mp4 out/up.mp4
 
@@ -42,9 +120,12 @@ Local, open-source CLI upscaling for images and video; runs fully on-device (Ubu
 # GPU readiness check (all 4 layers: driver, CUDA, torch, Vulkan)
 ./scripts/check-gpu.sh
 
+# Fetch real test media (public domain, gitignored)
+./scripts/download-test-media.sh
+
 # Run tests
 ./scripts/test.sh               # fast (~30 s): GPU + arg validation + smoke
-./scripts/test.sh --integration # + batch + video output validation (~60 s)
+./scripts/test.sh --integration # + batch on real photos + video source validation (~2 min)
 ```
 
 ## Architecture
@@ -56,6 +137,61 @@ Local, open-source CLI upscaling for images and video; runs fully on-device (Ubu
 - `img-implementation.md` → full image setup plan, pre-mortem risks, test plan, model reference
 - `vid-implementation.md` → full video setup plan, pre-mortem risks, test plan
 - `local-upscaling-audio.md` → audio tool survey (AudioSR, DeepFilterNet); not yet implemented
+
+## Error reference
+
+All errors print to **stderr** and exit with a non-zero code. Stdout is never polluted by error messages.
+
+### upscale-image.sh exit codes
+
+| Exit code | Message | Cause | Fix |
+|---|---|---|---|
+| 1 | `Flag -X requires an argument` | Flag given without a value | Provide the missing value, e.g. `-s 4` |
+| 1 | `Unknown flag: -X` | Unrecognised flag | Run with no args to see usage |
+| 1 | `SCALE must be a positive integer, got: X` | `-s abc` or `-s 0` | Use `-s 2`, `-s 4`, etc. |
+| 1 | `TILE must be a non-negative integer, got: X` | `--tile abc` | Use `--tile 512` or `--tile 0` |
+| 1 | `FORMAT must be png, jpg, or webp, got: X` | `-f bmp` or similar | Only `png`, `jpg`, `webp` are supported |
+| 2 | `GPU not accessible — nvidia-smi failed` | NVIDIA driver not loaded or no GPU | Run `nvidia-smi`; ensure driver is loaded |
+| 2 | `Python venv not found at tools/realesrgan-venv/...` | Setup not run | Run `scripts/setup.sh` |
+| 2 | `inference_realesrgan.py not found at ...` | Real-ESRGAN install incomplete | Re-run `scripts/setup.sh` |
+| 2 | `Model file not found: /path/to/model.pth` | Custom model path doesn't exist | Check the path; omit `-m` to use the default |
+| 2 | `Batch mode: INPUT must be a directory, got: X` | `-b` used with a file path | Pass a directory with `-b`, not a file |
+| 2 | `INPUT not found: X` | File or directory doesn't exist | Check path and spelling |
+| 2 | `Cannot create OUTPUT directory: X` | Parent path doesn't exist or no permission | Create the parent dir first |
+| 2 | `OUTPUT directory not writable: X` | Permission denied on output dir | Check `ls -ld` on the directory |
+| 3 | `Inference failed (exit N)` | Real-ESRGAN crashed mid-run | Check stderr above; usually OOM (lower `--tile`) or corrupt input |
+| — | `WARNING: < 10 GB free in X` | Disk space low — not fatal | Free space; large batches can fill disks quickly |
+
+### upscale-video.sh exit codes
+
+| Exit code | Message | Cause | Fix |
+|---|---|---|---|
+| 1 | `Flag -X requires an argument` | Flag without value | Provide the value |
+| 1 | `Unknown flag: -X` | Unrecognised flag | Check usage |
+| 1 | `ENGINE must be realesrgan or anime4k, got: X` | `-e ffmpeg` or misspelled | Use `-e realesrgan` or `-e anime4k` |
+| 1 | `SCALE must be a positive integer, got: X` | Non-integer scale | Use `-s 4` |
+| 2 | `video2x not found — run scripts/setup.sh or set VIDEO2X env var` | Binary missing | Run `scripts/setup.sh`; or set `VIDEO2X=/path/to/binary` |
+| 2 | `ffprobe not found on PATH (install ffmpeg)` | ffmpeg not installed | `sudo apt install ffmpeg` |
+| 2 | `GPU not accessible — nvidia-smi failed` | No GPU / driver not loaded | Run `nvidia-smi` |
+| 2 | `INPUT not found: X` | File doesn't exist | Check path |
+| 2 | `INPUT is not a valid video file: X` | Passed an image, text file, or corrupt video | Confirm the file plays in a media player |
+| 2 | `OUTPUT directory not writable: X` | Permission denied | Check dir permissions |
+| N | `video2x failed (exit N)` | video2x itself exited non-zero | Check stderr above; N is video2x's own exit code |
+| — | `WARNING: < 50 GB free in X` | Disk space low — not fatal | Free space; 30 s of 640×480 video generates ~10 GB of temp frames |
+
+### check-gpu.sh
+
+Exits 1 if any check fails; each failing check prints `[FAIL] reason` to stdout. Run it before any upscaling job:
+
+```
+[PASS] nvidia-smi: NVIDIA GeForce RTX 3050 Laptop GPU
+[PASS] CUDA version: 12.x
+[PASS] torch CUDA device: NVIDIA GeForce RTX 3050 Laptop GPU
+[PASS] Vulkan NVIDIA ICD present (video2x GPU acceleration available)
+```
+
+If torch shows `[FAIL]`, Real-ESRGAN will fall back to CPU — inference will be 10–50× slower.  
+If Vulkan shows `[FAIL]`, video2x will fall back to CPU — encode will be unusably slow.
 
 ## Rules
 - Always run a 30-second / single-image smoke test before any long batch job
