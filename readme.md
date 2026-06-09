@@ -76,6 +76,41 @@ Local, open-source CLI upscaling for images and video; runs fully on-device (Ubu
 - Fail fast: all boundary validation at script entry; errors to stderr with non-zero exit
 - Model-agnostic: wrappers accept any `.pth` file path; no model names hardcoded in logic
 
+## Output resolution depends on input size
+
+The scripts scale by a fixed multiplier (4× default). Output resolution is entirely determined by input:
+
+| Input | 4× output | ≥ 1080p? |
+|---|---|---|
+| 480×270 | 1920×1080 | ✓ exactly 1080p |
+| 854×480 (480p) | 3416×1920 | ✓ exceeds 1080p |
+| 1280×720 (720p) | 5120×2880 | ✓ near 4K |
+| 320×180 (test clip) | 1280×720 | ✗ only 720p |
+
+**The bundled `realesrgan-plus` model in Video2X 6.4.0 is 4× only** — no 2× or 6× variant is included. To reach 1080p from a very low-res source you would need to run two passes or use a different model.
+
+## Real test media needed
+
+The current test assets (`test-image.png`, `test-clip.mp4`) are synthetic — solid colors and gradients. Real-ESRGAN is trained on natural image degradation (blur, JPEG compression, noise); it produces little visible improvement on artificial inputs. To evaluate quality, use real degraded photos and video.
+
+**Sources for CC0 / public domain media:**
+
+| Source | Type | Notes |
+|---|---|---|
+| [Pixabay](https://pixabay.com) | Images + video | CC0; no attribution required |
+| [Pexels](https://pexels.com) | Images + video | Free license; no attribution required |
+| [Unsplash](https://unsplash.com) | Images | Unsplash license (free for use) |
+| [Internet Archive](https://archive.org/details/movies) | Video | Public domain films; good degraded-film test cases |
+| [Wikimedia Commons](https://commons.wikimedia.org) | Images + video | CC0 / public domain filter available |
+| [coverr.co](https://coverr.co) | Video | CC0 video clips |
+
+**Good test candidates:**
+- Old JPEG photos with visible compression artifacts (high-frequency detail lost)
+- 480p or 720p video clips with soft/blurry motion
+- Scanned documents or photos with film grain
+
+**Do not commit test media to this repo.** Place files in `test-assets/images/` or `test-assets/videos/` — the gitignore blocks them. Only `test-image.png` and `test-clip.mp4` are tracked.
+
 ## Roadmap — hardware upgrades for highest-end output
 
 Current bottleneck: VRAM (4–8 GB on RTX 3050/3060 Ti) forces `--tile 512`, which can leave seam artifacts and blocks the largest model variants entirely.
