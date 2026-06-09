@@ -20,9 +20,18 @@ INTEGRATION=0
 
 PASS=0; FAIL=0; SKIP=0
 _TMPDIR=""
+_TINY_IMG=""
 
-cleanup() { [ -n "$_TMPDIR" ] && rm -rf "$_TMPDIR"; }
+cleanup() {
+  [ -n "$_TMPDIR" ]    && rm -rf "$_TMPDIR"
+  [ -n "$_TINY_IMG" ]  && rm -f "$_TINY_IMG"
+}
 trap cleanup EXIT
+
+# Generate a 100×100 synthetic image for smoke tests (not kept in git).
+_TINY_IMG=$(mktemp /tmp/test-tiny-XXXXXX.png)
+convert -size 100x100 gradient:red-blue "$_TINY_IMG" 2>/dev/null \
+  || { printf 'ERROR: imagemagick convert required for smoke tests\n' >&2; exit 1; }
 
 ok()   { printf '[PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 fail() { printf '[FAIL] %s\n' "$1" >&2; FAIL=$((FAIL+1)); }
@@ -49,20 +58,20 @@ assert_exit "image: missing INPUT file → exit 2"        2 \
   scripts/upscale-image.sh no-such-file.jpg /tmp/out/
 
 assert_exit "image: invalid SCALE (non-integer) → exit 1"  1 \
-  scripts/upscale-image.sh -s abc test-assets/images/test-tiny.png /tmp/out/
+  scripts/upscale-image.sh -s abc "$_TINY_IMG" /tmp/out/
 
 assert_exit "image: invalid FORMAT (bmp) → exit 1"         1 \
-  scripts/upscale-image.sh -f bmp test-assets/images/test-tiny.png /tmp/out/
+  scripts/upscale-image.sh -f bmp "$_TINY_IMG" /tmp/out/
 
 assert_exit "image: nonexistent model path → exit 2"        2 \
-  scripts/upscale-image.sh -m /no/such/model.pth test-assets/images/test-tiny.png /tmp/out/
+  scripts/upscale-image.sh -m /no/such/model.pth "$_TINY_IMG" /tmp/out/
 
 assert_exit "image: uncreateable OUTPUT dir → exit 2"       2 \
-  scripts/upscale-image.sh test-assets/images/test-tiny.png /proc/no-write/out/
+  scripts/upscale-image.sh "$_TINY_IMG" /proc/no-write/out/
 
 # ─── 3. IMAGE: DRY RUN ──────────────────────────────────────────────────────────
 printf '\n── Image: dry run ──\n'
-DRY=$(scripts/upscale-image.sh -n test-assets/images/test-tiny.png /tmp/out/ 2>/dev/null)
+DRY=$(scripts/upscale-image.sh -n "$_TINY_IMG" /tmp/out/ 2>/dev/null)
 printf '%s' "$DRY" | grep -q 'inference_realesrgan.py' \
   && ok "image: dry run contains inference_realesrgan.py" \
   || fail "image: dry run missing inference_realesrgan.py — got: $DRY"
@@ -73,7 +82,7 @@ printf '%s' "$DRY" | grep -q 'RealESRGAN_x4plus' \
 # ─── 4. IMAGE: SINGLE SMOKE TEST (tiny 100×100 → 400×400) ──────────────────────
 printf '\n── Image: single inference smoke test ──\n'
 _TMPDIR=$(mktemp -d)
-if scripts/upscale-image.sh test-assets/images/test-tiny.png "$_TMPDIR" 2>/dev/null; then
+if scripts/upscale-image.sh "$_TINY_IMG" "$_TMPDIR" 2>/dev/null; then
   OUT=$(find "$_TMPDIR" -name '*.png' | head -1)
   if [ -z "$OUT" ]; then
     fail "image: smoke test — no output PNG produced"
@@ -91,7 +100,7 @@ fi
 # ─── 5. IMAGE: JSON OUTPUT ──────────────────────────────────────────────────────
 printf '\n── Image: JSON output flag ──\n'
 _TMPDIR2=$(mktemp -d)
-JSON=$(scripts/upscale-image.sh -j test-assets/images/test-tiny.png "$_TMPDIR2" 2>/dev/null)
+JSON=$(scripts/upscale-image.sh -j "$_TINY_IMG" "$_TMPDIR2" 2>/dev/null)
 rm -rf "$_TMPDIR2"
 printf '%s' "$JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); \
   assert d['scale']==4; assert d['files_written']==1; assert 'output' in d" 2>/dev/null \
@@ -104,7 +113,7 @@ assert_exit "video: missing INPUT file → exit 2"             2 \
   scripts/upscale-video.sh no-such-file.mp4 /tmp/out.mp4
 
 assert_exit "video: image file as INPUT → exit 2"            2 \
-  scripts/upscale-video.sh test-assets/images/test-tiny.png /tmp/out.mp4
+  scripts/upscale-video.sh "$_TINY_IMG" /tmp/out.mp4
 
 assert_exit "video: invalid ENGINE → exit 1"                 1 \
   scripts/upscale-video.sh -e ffmpeg test-assets/videos/test-clip.mp4 /tmp/out.mp4
@@ -130,8 +139,8 @@ printf '\n── Integration: image batch ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
   BATCH_IN=$(mktemp -d)
   BATCH_OUT=$(mktemp -d)
-  cp test-assets/images/test-tiny.png "$BATCH_IN/a.png"
-  cp test-assets/images/test-tiny.png "$BATCH_IN/b.png"
+  cp "$_TINY_IMG" "$BATCH_IN/a.png"
+  cp "$_TINY_IMG" "$BATCH_IN/b.png"
   if scripts/upscale-image.sh -b "$BATCH_IN" "$BATCH_OUT" 2>/dev/null; then
     OUT_COUNT=$(find "$BATCH_OUT" -name '*.png' | wc -l)
     [ "$OUT_COUNT" -eq 2 ] \

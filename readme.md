@@ -52,8 +52,7 @@ Local, open-source CLI upscaling for images and video; runs fully on-device (Ubu
 - `scripts/upscale-image.sh` → image wrapper (Real-ESRGAN); exits 0/1/2/3
 - `scripts/upscale-video.sh` → video wrapper (Video2X); exits 0/1/2
 - `scripts/check-gpu.sh` → validates nvidia-smi, CUDA version, torch CUDA device, Vulkan ICD; exits 1 if any check fails
-- `scripts/test.sh` → test suite; `--integration` flag enables batch + video output tests
-- `test-assets/images/test-tiny.png` → 100×100 synthetic image used by fast smoke tests
+- `scripts/test.sh` → test suite; generates its own 100×100 synthetic image at runtime; `--integration` flag enables batch + video output tests
 - `img-implementation.md` → full image setup plan, pre-mortem risks, test plan, model reference
 - `vid-implementation.md` → full video setup plan, pre-mortem risks, test plan
 - `local-upscaling-audio.md` → audio tool survey (AudioSR, DeepFilterNet); not yet implemented

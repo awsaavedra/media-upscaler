@@ -6,6 +6,13 @@ output/
 results/
 test-assets/output/
 
+# Test assets — only test-image.png and test-clip.mp4 are tracked.
+# Everything else in test-assets/ is ignored to prevent large media from landing in git.
+test-assets/images/*
+!test-assets/images/test-image.png
+test-assets/videos/*
+!test-assets/videos/test-clip.mp4
+
 # Python
 __pycache__/
 *.pyc
