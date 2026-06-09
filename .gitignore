@@ -1,7 +1,11 @@
 # Local tool installations — large binaries, venvs, model weights
 tools/
 
-# Upscaled output
+# Input media and upscaled output — media files stay local, never committed
+input/images/*
+input/video/*
+!input/images/.gitkeep
+!input/video/.gitkeep
 output/
 results/
 test-assets/output/
