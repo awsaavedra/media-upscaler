@@ -2,11 +2,15 @@
 
 Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usability, 2. efficient image/video processing; TUI/feedback/setup fold into usability.
 
+**Status (2026-06-09): v0 verified stable (32/32 integration tests, GPU path confirmed) and tagged; v1 cleared to start.** Open risk: v1 ≤ 10 h exit bar pending the 854×480 fast-preset benchmark (first v1 task).
+
 Reference job for all targets below: **1 hour 854×480 @ 25 fps → 1920×1080** (90,000 frames), path = AI 2× → 1708×960 → lanczos 1.125× → 1080p. Integer-scale engines can't do 2.25× directly; 4×-then-downscale is ~6× the work for discarded detail.
 
 ## v0 (current, baseline)
 
 Shipped: `-q` presets, Rich TUI (frame/fps/ETA/VRAM/temp/clock), perf estimator with hardware profiles, dry-run, JSON output, GPU check, test suite.
+
+Verified stable 2026-06-09: `test.sh --integration` 32/32 (incl. GPU medium encode, 2.83 fps @ 320×180), `check-gpu.sh` 4/4, `bash -n` clean, Vulkan device 0 = RTX 3050 (wrapper default targets dGPU correctly).
 
 Measured on RTX 3050 Mobile (4 GB):
 
@@ -25,22 +29,22 @@ Exit criteria: reference job completes **≤ 10 h** on RTX 3050 Mobile, survives
 
 - **Chunked processing + `--resume`** — ffmpeg-segment into ~5 min chunks, upscale per chunk, concat; per-chunk state in sidecar JSON. Market-gap: single most impactful feature for jobs > 10 min. Acceptance: kill mid-job, resume, lose ≤ 1 chunk; output bit-identical duration vs single-pass.
 - **Progress sidecar JSON + TUI re-attach** — writer updates `{output}.progress.json` (chunk, frame, fps, ETA) every few seconds; `tui-monitor.py --attach` tails it. Acceptance: SSH drop, reconnect, live state visible.
-- **Calibration probe → trustworthy ETA** — upscale ~30 real source frames before committing, print measured fps, ETA, temp-disk and VRAM forecast; abort prompt if disk short. Replaces spec-ratio projection for the pre-job estimate. Acceptance: ETA within ±20 % of actual on test clips.
+- **Calibration probe → trustworthy ETA** — upscale ~30 real source frames before committing, print measured fps, ETA, temp-disk and VRAM forecast; abort prompt if disk short. Replaces spec-ratio projection for the pre-job estimate. video2x `-b` (benchmark: discard frames, report avg fps) is the ready-made primitive. Acceptance: ETA within ±20 % of actual on test clips.
 - **Post-mux integrity check** — duration drift ≤ 100 ms, frame count match, A/V sync ≤ 40 ms; fail loudly with actionable message (guards Video2X's documented 2-frame-loss / audio-drift bugs).
 - **Temp-disk preflight** — estimate chunk + temp size, verify free space on output filesystem before start.
 - **Throttle warning in TUI** — flag sustained SM-clock drop at temp ≥ threshold (data already polled).
 
 ### Efficiency (image/video processing)
 
-- **`-q fast` preset: compact video model** — realesr-animevideov3 / 2x-Compact (SRVGGNet). Biggest single lever, expected 2–5×; video tolerates lighter models than stills (temporal masking). Acceptance: ≥ 2 fps @ 854×480 on 3050 Mobile + documented quality spot-check vs `medium`.
+- **`-q fast` preset: compact video model** — `realesr-animevideov3` (SRVGGNet compact). Verified 2026-06-09: supported by the installed Video2X (its default model, native 2×/3×/4×); benchmark on test clip ran ≥ 9.5 fps vs 2.83 fps medium → ≥ 3.4× (lower bound, encode excluded). First v1 task: benchmark at 854×480 to validate the ≤ 10 h exit bar — pixel-scaled projection lands ~1.4–1.6 fps (~16 h); if < 2.5 fps measured, pull the TensorRT backend forward from v2 or revise the bar. Acceptance: ≥ 2 fps @ 854×480 on 3050 Mobile + documented quality spot-check vs `medium`.
 - **VRAM probe → auto tile + FP16 defaults** — map free VRAM to tile size (200/4 GB, 300/6 GB, 400/8 GB, 600/12 GB), FP16 on where supported. Acceptance: no OOM at defaults on 4 GB; no manual `--tile` needed for common inputs.
-- **NVENC/NVDEC encode/decode** — keep x264 off the critical path (~1.2×, stabler fps).
 
 ## v2.0 — differentiation
 
 Exit criteria: reference job **≤ 4 h** on 3050 Mobile; feature set matches the "Your Target" column of the market-gap feature matrix.
 
-- **TensorRT / PyTorch FP16 backend with frame batching** — use Tensor cores instead of NCNN shader FP16; expected 2–4× on RTX 30-series. Larger lift; keep NCNN as fallback.
+- **TensorRT / PyTorch FP16 backend with frame batching** — use Tensor cores instead of NCNN shader FP16; expected 2–4× on RTX 30-series. Larger lift; keep NCNN as fallback. Candidate for promotion to v1 if `-q fast` misses the exit bar (see v1).
+- **NVENC encode** — blocked inside Video2X: bundled AppImage libav fails with error -22 on `h264_nvenc` (verified 2026-06-09, with and without `--pix-fmt yuv420p`). System ffmpeg has h264/hevc/av1_nvenc, so the path is newer AppImage, or lossless intermediate + system-ffmpeg encode. Minor lever (~1.2×), hence v2.
 - **Duplicate-frame skip** — mpdecimate-style dedup before inference, reuse upscaled frame via mapping; 1.2–2× on low-motion content.
 - **RIFE frame interpolation** — `--interpolate 2x`.
 - **Audio SR** — AudioSR wrapper: standalone subcommand + opt-in `--enhance-audio` for video (only 3-modality OSS CLI; see [local-upscaling-audio.md](local-upscaling-audio.md)).
