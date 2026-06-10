@@ -8,32 +8,34 @@ Local CLI upscaling pipeline for images and video; runs fully on-device (Ubuntu,
 2. Run setup: `./scripts/setup.sh` — installs Real-ESRGAN venv and Video2X binary under `tools/`
 3. Check GPU readiness: `./scripts/check-gpu.sh`
 4. Drop media into `input/images/` or `input/video/`
-5. Run: `./scripts/upscale-image.sh input/images/photo.jpg output/images/` or `./scripts/upscale-video.sh input/video/clip.mp4 output/video/clip-4x.mp4`
+5. Upscale: `./scripts/upscale-image.sh input/images/photo.jpg output/images/` or `./scripts/upscale-video.sh input/video/clip.mp4 output/video/clip-2x.mp4`
+6. Estimate performance on target hardware: `tools/realesrgan/venv/bin/python scripts/perf-estimate.py --video input/video/clip.mp4`
+7. Monitor live progress: TUI activates automatically when a terminal is attached to step 5
 
 ## Stack
-- Image upscaling: Real-ESRGAN Python (BasicSR), `RealESRGAN_x4plus` model
-- Video upscaling: Video2X 6.4.0 AppImage (Vulkan backend), `realesrgan-plus` model
-- Frame handling: FFmpeg
-- Runtime: Python 3.12, CUDA 11.8+, NVIDIA driver ≥ 525
+- Bash, Python 3.12; NVIDIA driver ≥ 525, CUDA 11.8+
+- Image: Real-ESRGAN Python (`RealESRGAN_x4plus`); Video: Video2X 6.4.0 AppImage (Vulkan/NCNN)
+- Frame handling: FFmpeg; TUI: `rich` (realesrgan venv)
 
 ## Commands
-- Upscale image: `./scripts/upscale-image.sh input/images/photo.jpg output/images/`
-- Upscale image batch: `./scripts/upscale-image.sh -b input/images/ output/images/`
-- Upscale video (default — medium quality, Real-ESRGAN 2×): `./scripts/upscale-video.sh input/video/clip.mp4 output/video/clip-2x.mp4`
-- Upscale video low quality (ffmpeg lanczos, CPU, seconds): `./scripts/upscale-video.sh -q low input/video/clip.mp4 output/video/clip-2x.mp4`
-- Upscale video high quality (Real-ESRGAN 4×, ~2 h/30 s clip): `./scripts/upscale-video.sh -q high input/video/clip.mp4 output/video/clip-4x.mp4`
-- Dry run (print command, no execute): `./scripts/upscale-image.sh -n photo.jpg out/`
-- JSON output (for scripting): `./scripts/upscale-image.sh -j photo.jpg out/`
-- GPU check: `./scripts/check-gpu.sh`
-- Fetch real test media: `./scripts/download-test-media.sh`
+- Setup: `./scripts/setup.sh`
+- Dev (image): `./scripts/upscale-image.sh input/images/photo.jpg output/images/`
+- Dev (video): `./scripts/upscale-video.sh -q medium input/video/clip.mp4 output/video/clip-2x.mp4`
 - Test fast (~30 s): `./scripts/test.sh`
 - Test all (~2 min): `./scripts/test.sh --integration`
+- Lint: `bash -n scripts/*.sh` (syntax check; no shellcheck installed)
+- Dry run: `./scripts/upscale-video.sh -n -q high clip.mp4 out.mp4`
+- JSON output: `./scripts/upscale-video.sh -j clip.mp4 out.mp4`
+- GPU check: `./scripts/check-gpu.sh`
+- Fetch test media: `./scripts/download-test-media.sh`
+- Perf estimate: `tools/realesrgan/venv/bin/python scripts/perf-estimate.py --video clip.mp4`
+- List hardware profiles: `tools/realesrgan/venv/bin/python scripts/perf-estimate.py --list-hw`
 
-## Video quality presets (-q)
+### Video quality presets (-q)
 | Preset | Engine | Scale | GPU | Speed | Quality |
 |---|---|---|---|---|---|
 | `low` | ffmpeg lanczos | 2× | no | ~seconds | smooth interpolation, no AI detail |
-| `medium` *(default)* | RealCUGAN | 2× | yes | ~2 min/10 s (320×180); ~30 min/30 s (640×480) | AI-enhanced, good balance |
+| `medium` *(default)* | RealCUGAN | 2× | yes | ~2 min/10 s (320×180); ~20 min/30 s (640×480) | AI-enhanced, good balance |
 | `high` | Real-ESRGAN | 4× | yes | ~2 h/30 s | best quality, highest VRAM use |
 
 Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` for ffmpeg at 4×).
@@ -49,9 +51,11 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 - `scripts/test.sh` → test suite; `--integration` enables batch + video source tests
 - `scripts/setup.sh` → installs Real-ESRGAN venv and Video2X binary into `tools/`
 - `scripts/download-test-media.sh` → fetches public-domain test media into `test-assets/`
+- `scripts/perf-estimate.py` → hardware throughput estimator; `--video`, `--target`, `--list-hw`
+- `scripts/tui-monitor.py` → Rich TUI progress monitor; pipe video2x output through it with `--frames N`
 - `test-assets/` → synthetic test fixtures (committed) + real media (gitignored)
-- `docs/img-implementation.md` → full image setup plan, risks, test plan, model reference
-- `docs/vid-implementation.md` → full video setup plan, risks, test plan, decision log
+- `docs/img-implementation.md` → image setup plan, risks, test plan, model reference
+- `docs/vid-implementation.md` → video setup plan, risks, test plan, decision log
 - `docs/local-upscaling-audio.md` → audio tool survey (AudioSR, DeepFilterNet); not yet implemented
 - `docs/test-assets-vid-img-aud.md` → test asset sources and guidelines
 - `docs/market-gap.md` → market gap analysis and background research
@@ -79,4 +83,4 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 - Cloud upscaling services
 - GUI tools (Upscayl, Chainner)
 - Audio upscaling (`docs/local-upscaling-audio.md` is reference only; no scripts yet)
-- Anime-only workflows (Anime4K available via `-e anime4k` but not the primary path
+- Anime-only workflows (Anime4K available via `-e anime4k` but not the primary path)

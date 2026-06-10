@@ -13,23 +13,31 @@ if [ -z "${VIDEO2X:-}" ]; then
   fi
 fi
 
-SCALE=4
-ENGINE=realesrgan
+QUALITY=""   # unset = medium
+SCALE=""     # unset = resolved from quality preset
+ENGINE=""    # unset = resolved from quality preset
 DRY_RUN=0
 JSON_OUT=0
 
 usage() {
-  printf 'Usage: %s [-s SCALE] [-e ENGINE] [-j] [-n] INPUT OUTPUT\n' "$0"
-  printf '  -s  upscale factor integer (default: 2)\n'
-  printf '  -e  engine: realesrgan | anime4k (default: realesrgan)\n'
+  printf 'Usage: %s [-q QUALITY] [-s SCALE] [-e ENGINE] [-j] [-n] INPUT OUTPUT\n' "$0"
+  printf '\n'
+  printf '  -q  quality preset — sets scale and engine together (default: medium)\n'
+  printf '        low    ffmpeg lanczos 2x   CPU only  ~seconds per clip  no GPU needed\n'
+  printf '        medium RealCUGAN 2x        Vulkan    ~45 min/30 s clip  recommended\n'
+  printf '        high   Real-ESRGAN 4x      Vulkan    ~2 h/30 s clip    best quality\n'
+  printf '\n'
+  printf '  -s  override scale factor integer (overrides the -q scale)\n'
+  printf '  -e  override engine: realesrgan | realcugan | anime4k (overrides the -q engine)\n'
   printf '  -j  print json summary to stdout on completion\n'
   printf '  -n  dry run: print command, do not execute\n'
   printf '  -h  help\n'
   exit 0
 }
 
-while getopts ':s:e:jnh' opt; do
+while getopts ':q:s:e:jnh' opt; do
   case $opt in
+    q) QUALITY=$OPTARG ;;
     s) SCALE=$OPTARG ;;
     e) ENGINE=$OPTARG ;;
     j) JSON_OUT=1 ;;
@@ -44,22 +52,40 @@ shift $((OPTIND - 1))
 INPUT=${1:?'INPUT required — path to source video'}
 OUTPUT=${2:?'OUTPUT required — path for upscaled video'}
 
-# Validate engine value
-case $ENGINE in
-  realesrgan|anime4k) ;;
-  *) printf 'ENGINE must be realesrgan or anime4k, got: %s\n' "$ENGINE" >&2; exit 1 ;;
+# Validate quality
+case ${QUALITY:-medium} in
+  low|medium|high) ;;
+  *) printf 'QUALITY must be low, medium, or high, got: %s\n' "$QUALITY" >&2; exit 1 ;;
 esac
 
-# Validate scale is a positive integer
+# Apply quality preset; explicit -s / -e override the preset values
+case ${QUALITY:-medium} in
+  low)    SCALE=${SCALE:-2}; ENGINE=${ENGINE:-ffmpeg_scale} ;;
+  medium) SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realcugan} ;;
+  high)   SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan} ;;
+esac
+
+# Validate scale
 case $SCALE in
   ''|*[!0-9]*) printf 'SCALE must be a positive integer, got: %s\n' "$SCALE" >&2; exit 1 ;;
 esac
 
-# Boundary checks — fail fast, surface errors early
-[ -n "${VIDEO2X:-}" ] && [ -x "$VIDEO2X" ] \
-  || { printf 'video2x not found — run scripts/setup.sh or set VIDEO2X env var\n' >&2; exit 2; }
-command -v ffprobe  >/dev/null 2>&1 || { printf 'ffprobe not found on PATH (install ffmpeg)\n' >&2; exit 2; }
-nvidia-smi          >/dev/null 2>&1 || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
+# Validate engine (ffmpeg_scale is the internal name set by -q low, not exposed via -e)
+case $ENGINE in
+  realesrgan|realcugan|anime4k|ffmpeg_scale) ;;
+  *) printf 'ENGINE must be realesrgan, realcugan, or anime4k (or use -q low for ffmpeg scale), got: %s\n' "$ENGINE" >&2; exit 1 ;;
+esac
+
+# Boundary checks — only require GPU tools when engine needs them
+command -v ffprobe >/dev/null 2>&1 || { printf 'ffprobe not found on PATH (install ffmpeg)\n' >&2; exit 2; }
+
+if [ "$ENGINE" = "ffmpeg_scale" ]; then
+  command -v ffmpeg >/dev/null 2>&1 || { printf 'ffmpeg not found on PATH\n' >&2; exit 2; }
+else
+  [ -n "${VIDEO2X:-}" ] && [ -x "$VIDEO2X" ] \
+    || { printf 'video2x not found — run scripts/setup.sh or set VIDEO2X env var\n' >&2; exit 2; }
+  nvidia-smi >/dev/null 2>&1 || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
+fi
 
 [ -f "$INPUT" ] || { printf 'INPUT not found: %s\n' "$INPUT" >&2; exit 2; }
 # Duration must be a numeric value — images report "N/A" and fail this check
@@ -69,6 +95,8 @@ case $_DUR in
 esac
 
 OUTDIR=$(dirname "$OUTPUT")
+mkdir -p "$OUTDIR" 2>/dev/null \
+  || { printf 'Cannot create OUTPUT directory: %s\n' "$OUTDIR" >&2; exit 2; }
 [ -w "$OUTDIR" ] || { printf 'OUTPUT directory not writable: %s\n' "$OUTDIR" >&2; exit 2; }
 
 FREE_KB=$(df -k "$OUTDIR" | awk 'NR==2{print $4}')
@@ -76,12 +104,22 @@ if [ "$FREE_KB" -lt 52428800 ]; then
   printf 'WARNING: < 50 GB free in %s — large encodes may exhaust disk\n' "$OUTDIR" >&2
 fi
 
-# video2x 6.x API: map engine flag to processor + model args
+# Build command for selected engine
 case $ENGINE in
+  ffmpeg_scale)
+    CMD=(ffmpeg -i "$INPUT"
+         -vf "scale=iw*${SCALE}:ih*${SCALE}:flags=lanczos"
+         -c:v libx264 -crf 18 -preset fast -c:a copy -y "$OUTPUT")
+    ;;
   realesrgan)
     # realesrgan-plus is the general live-action model; default is anime-optimised
     CMD=("$VIDEO2X" -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
          -p realesrgan --realesrgan-model realesrgan-plus)
+    ;;
+  realcugan)
+    # models-se is the general-purpose variant with 2x/3x/4x support
+    CMD=("$VIDEO2X" -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
+         -p realcugan --realcugan-model models-se)
     ;;
   anime4k)
     # anime4k is a libplacebo shader in 6.x, not a standalone processor
@@ -95,7 +133,22 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-# Progress bar — active when a terminal is attached; passes raw output through otherwise.
+# Detect total frame count for video2x engines (used by tui-monitor.py).
+# ffmpeg_scale uses ffmpeg's native progress display, so skip this for that engine.
+if [ "$ENGINE" != "ffmpeg_scale" ]; then
+  _FRAMES=$(ffprobe -v error -select_streams v:0 \
+      -show_entries stream=nb_frames -of csv=p=0 "$INPUT" 2>/dev/null)
+  # some containers don't store nb_frames; fall back to duration × fps
+  if [ -z "$_FRAMES" ] || [ "$_FRAMES" = "N/A" ]; then
+    _DUR_S=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$INPUT" 2>/dev/null)
+    _FPS=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
+        -of csv=p=0 "$INPUT" 2>/dev/null | awk -F'/' '{if($2) printf "%d", $1/$2; else print $1}')
+    _FRAMES=$(python3 -c "print(round(${_DUR_S:-0} * ${_FPS:-25}))" 2>/dev/null)
+  fi
+fi
+
+# Progress bar for video2x output — active when a terminal is attached.
+# ffmpeg_scale uses ffmpeg's native progress display.
 _progress_bar() {
   local tty=/dev/tty
   [ -w "$tty" ] 2>/dev/null || tty=/dev/stderr
@@ -123,15 +176,24 @@ _progress_bar() {
   printf '\n' >"$tty"
 }
 
-if [ -t 1 ] || [ -t 2 ]; then
-  "${CMD[@]}" 2>&1 | _progress_bar || true
-  _ec=${PIPESTATUS[0]}
+if [ "$ENGINE" = "ffmpeg_scale" ]; then
+  "${CMD[@]}" || { printf 'ffmpeg failed (exit %d)\n' "$?" >&2; exit 3; }
+elif [ -t 1 ] || [ -t 2 ]; then
+  VENV_PYTHON="$PROJECT_ROOT/tools/realesrgan/venv/bin/python"
+  TUI_SCRIPT="$PROJECT_ROOT/scripts/tui-monitor.py"
+  if [ -f "$TUI_SCRIPT" ] && [ -x "$VENV_PYTHON" ]; then
+    "${CMD[@]}" 2>&1 | "$VENV_PYTHON" "$TUI_SCRIPT" --frames "${_FRAMES:-0}" || true
+    _ec=${PIPESTATUS[0]}
+  else
+    "${CMD[@]}" 2>&1 | _progress_bar || true
+    _ec=${PIPESTATUS[0]}
+  fi
   [ "$_ec" -eq 0 ] || { printf 'video2x failed (exit %d)\n' "$_ec" >&2; exit "$_ec"; }
 else
   "${CMD[@]}"
 fi
 
 if [ "$JSON_OUT" -eq 1 ]; then
-  printf '{"input":"%s","output":"%s","engine":"%s","scale":%s}\n' \
-    "$INPUT" "$OUTPUT" "$ENGINE" "$SCALE"
+  printf '{"input":"%s","output":"%s","quality":"%s","engine":"%s","scale":%s}\n' \
+    "$INPUT" "$OUTPUT" "${QUALITY:-medium}" "$ENGINE" "$SCALE"
 fi

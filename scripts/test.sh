@@ -123,18 +123,64 @@ assert_exit "video: invalid ENGINE → exit 1"                 1 \
 assert_exit "video: invalid SCALE (non-integer) → exit 1"   1 \
   scripts/upscale-video.sh -s abc test-assets/videos/test-clip.mp4 /tmp/out.mp4
 
+assert_exit "video: invalid QUALITY → exit 1"                1 \
+  scripts/upscale-video.sh -q ultra test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
 assert_exit "video: uncreateable OUTPUT dir → exit 2"        2 \
   scripts/upscale-video.sh test-assets/videos/test-clip.mp4 /proc/no-write/out.mp4
 
-# ─── 7. VIDEO: DRY RUN ──────────────────────────────────────────────────────────
-printf '\n── Video: dry run ──\n'
+# ─── 7. VIDEO: DRY RUN (quality presets) ────────────────────────────────────────
+printf '\n── Video: dry run (quality presets) ──\n'
+# Default (medium): video2x realcugan at 2x
 VDRY=$(scripts/upscale-video.sh -n test-assets/videos/test-clip.mp4 /tmp/out.mp4 2>/dev/null)
 printf '%s' "$VDRY" | grep -q 'video2x' \
-  && ok "video: dry run contains video2x binary" \
-  || fail "video: dry run missing video2x — got: $VDRY"
-printf '%s' "$VDRY" | grep -q 'realesrgan-plus' \
-  && ok "video: dry run uses realesrgan-plus model (not anime default)" \
-  || fail "video: dry run missing realesrgan-plus model"
+  && ok "video -q medium (default): dry run contains video2x binary" \
+  || fail "video -q medium (default): dry run missing video2x — got: $VDRY"
+printf '%s' "$VDRY" | grep -q 'realcugan' \
+  && ok "video -q medium (default): dry run uses realcugan engine" \
+  || fail "video -q medium (default): dry run missing realcugan — got: $VDRY"
+printf '%s' "$VDRY" | grep -qE '\-s 2\b' \
+  && ok "video -q medium (default): scale is 2x" \
+  || fail "video -q medium (default): expected -s 2 in command — got: $VDRY"
+
+# Low preset: ffmpeg lanczos, no GPU
+VDRY_LOW=$(scripts/upscale-video.sh -q low -n test-assets/videos/test-clip.mp4 /tmp/out.mp4 2>/dev/null)
+printf '%s' "$VDRY_LOW" | grep -q 'ffmpeg' \
+  && ok "video -q low: dry run uses ffmpeg" \
+  || fail "video -q low: dry run missing ffmpeg — got: $VDRY_LOW"
+printf '%s' "$VDRY_LOW" | grep -q 'lanczos' \
+  && ok "video -q low: dry run uses lanczos filter" \
+  || fail "video -q low: dry run missing lanczos — got: $VDRY_LOW"
+
+# High preset: video2x realesrgan at 4x
+VDRY_HIGH=$(scripts/upscale-video.sh -q high -n test-assets/videos/test-clip.mp4 /tmp/out.mp4 2>/dev/null)
+printf '%s' "$VDRY_HIGH" | grep -q 'video2x' \
+  && ok "video -q high: dry run contains video2x binary" \
+  || fail "video -q high: dry run missing video2x — got: $VDRY_HIGH"
+printf '%s' "$VDRY_HIGH" | grep -qE '\-s 4\b' \
+  && ok "video -q high: scale is 4x" \
+  || fail "video -q high: expected -s 4 in command — got: $VDRY_HIGH"
+
+# ─── 7b. VIDEO: LOW-QUALITY SMOKE TEST (ffmpeg, CPU, ~1 s) ──────────────────────
+printf '\n── Video: low-quality smoke test (ffmpeg lanczos) ──\n'
+_VID_TMPDIR=$(mktemp -d)
+_VID_OUT="$_VID_TMPDIR/clip-low-2x.mp4"
+if scripts/upscale-video.sh -q low test-assets/videos/test-clip.mp4 "$_VID_OUT" 2>/dev/null; then
+  if [ -f "$_VID_OUT" ] && [ "$(stat -c%s "$_VID_OUT")" -gt 10000 ]; then
+    VW=$(ffprobe -v error -select_streams v:0 \
+          -show_entries stream=width -of csv=p=0 "$_VID_OUT" 2>/dev/null)
+    VH=$(ffprobe -v error -select_streams v:0 \
+          -show_entries stream=height -of csv=p=0 "$_VID_OUT" 2>/dev/null)
+    [ "${VW:-0}" -eq 640 ] && [ "${VH:-0}" -eq 360 ] \
+      && ok "video -q low: 320x180 → 640x360 (2x confirmed)" \
+      || fail "video -q low: expected 640x360 output, got ${VW}x${VH}"
+  else
+    fail "video -q low: output file missing or too small"
+  fi
+else
+  fail "video -q low: ffmpeg exited non-zero"
+fi
+rm -rf "$_VID_TMPDIR"
 
 # ─── 8. INTEGRATION: IMAGE BATCH (real Wikimedia photographs) ─────────────────
 # Uses canal-street-1900s.jpg (665×527) and church-building-1906.jpg (730×580)
@@ -175,7 +221,6 @@ fi
 
 # ─── 9. INTEGRATION: VALIDATE VIDEO SOURCE FILES ────────────────────────────────
 # Validates the downloaded Internet Archive source clips are real video files.
-# Does NOT run upscaling encode (too slow for automated tests).
 printf '\n── Integration: video source validation ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
   for VID_SRC in \
@@ -201,32 +246,36 @@ if [ "$INTEGRATION" -eq 1 ]; then
       fail "$vname: missing — run: scripts/download-test-media.sh"
     fi
   done
-
-  # Validate pre-rendered output if it exists
-  VIDEO_OUT="output/video/test-clip-4x.mp4"
-  if [ -f "$VIDEO_OUT" ] && [ "$(stat -c%s "$VIDEO_OUT")" -gt 10000 ]; then
-    W=$(ffprobe -v error -select_streams v:0 \
-          -show_entries stream=width -of csv=p=0 "$VIDEO_OUT" 2>/dev/null)
-    H=$(ffprobe -v error -select_streams v:0 \
-          -show_entries stream=height -of csv=p=0 "$VIDEO_OUT" 2>/dev/null)
-    HAS_AUDIO=$(ffprobe -v error -select_streams a:0 \
-          -show_entries stream=codec_name -of csv=p=0 "$VIDEO_OUT" 2>/dev/null)
-    DUR=$(ffprobe -v error -show_entries format=duration \
-          -of csv=p=0 "$VIDEO_OUT" 2>/dev/null | cut -d. -f1)
-    [ "$W" -eq 1280 ] && [ "$H" -eq 720 ] \
-      && ok "video upscaled output: 1280×720 (4× from 320×180 source)" \
-      || fail "video upscaled output: expected 1280×720, got ${W}×${H}"
-    [ -n "$HAS_AUDIO" ] \
-      && ok "video upscaled output: audio stream present ($HAS_AUDIO)" \
-      || fail "video upscaled output: no audio stream"
-    [ "$DUR" -ge 9 ] && [ "$DUR" -le 11 ] \
-      && ok "video upscaled output: duration ${DUR}s (within 9–11 s)" \
-      || fail "video upscaled output: unexpected duration ${DUR}s"
-  else
-    skip "video upscaled output validation ($VIDEO_OUT not present)"
-  fi
 else
-  skip "video source + output validation (run with --integration)"
+  skip "video source validation (run with --integration)"
+fi
+
+# ─── 10. INTEGRATION: VIDEO MEDIUM ENCODE (RealCUGAN 2×, ~2 min on 320×180) ───
+# Runs -q medium on the 10 s test clip; validates output resolution and duration.
+printf '\n── Integration: video medium encode (-q medium, RealCUGAN 2×) ──\n'
+if [ "$INTEGRATION" -eq 1 ]; then
+  _VID_MED_OUT=$(mktemp /tmp/test-medium-XXXXXX.mp4)
+  printf '  running video2x realcugan 2× on test-clip.mp4 — ~2 min...\n'
+  if scripts/upscale-video.sh -q medium \
+      test-assets/videos/test-clip.mp4 "$_VID_MED_OUT" 2>/dev/null; then
+    MW=$(ffprobe -v error -select_streams v:0 \
+          -show_entries stream=width -of csv=p=0 "$_VID_MED_OUT" 2>/dev/null)
+    MH=$(ffprobe -v error -select_streams v:0 \
+          -show_entries stream=height -of csv=p=0 "$_VID_MED_OUT" 2>/dev/null)
+    MD=$(ffprobe -v error -show_entries format=duration \
+          -of csv=p=0 "$_VID_MED_OUT" 2>/dev/null | cut -d. -f1)
+    [ "${MW:-0}" -eq 640 ] && [ "${MH:-0}" -eq 360 ] \
+      && ok "video -q medium: 320×180 → 640×360 (2× confirmed)" \
+      || fail "video -q medium: expected 640×360, got ${MW}×${MH}"
+    [ "${MD:-0}" -ge 9 ] && [ "${MD:-0}" -le 11 ] \
+      && ok "video -q medium: duration ${MD}s (within 9–11 s)" \
+      || fail "video -q medium: unexpected duration ${MD}s"
+  else
+    fail "video -q medium: video2x exited non-zero"
+  fi
+  rm -f "$_VID_MED_OUT"
+else
+  skip "video medium encode — RealCUGAN 2× (~2 min on 320×180 test clip; run with --integration)"
 fi
 
 # ─── SUMMARY ────────────────────────────────────────────────────────────────────
