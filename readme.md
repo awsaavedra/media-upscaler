@@ -19,13 +19,24 @@ Local CLI upscaling pipeline for images and video; runs fully on-device (Ubuntu,
 ## Commands
 - Upscale image: `./scripts/upscale-image.sh input/images/photo.jpg output/images/`
 - Upscale image batch: `./scripts/upscale-image.sh -b input/images/ output/images/`
-- Upscale video: `./scripts/upscale-video.sh input/video/clip.mp4 output/video/clip-4x.mp4`
+- Upscale video (default — medium quality, Real-ESRGAN 2×): `./scripts/upscale-video.sh input/video/clip.mp4 output/video/clip-2x.mp4`
+- Upscale video low quality (ffmpeg lanczos, CPU, seconds): `./scripts/upscale-video.sh -q low input/video/clip.mp4 output/video/clip-2x.mp4`
+- Upscale video high quality (Real-ESRGAN 4×, ~2 h/30 s clip): `./scripts/upscale-video.sh -q high input/video/clip.mp4 output/video/clip-4x.mp4`
 - Dry run (print command, no execute): `./scripts/upscale-image.sh -n photo.jpg out/`
 - JSON output (for scripting): `./scripts/upscale-image.sh -j photo.jpg out/`
 - GPU check: `./scripts/check-gpu.sh`
 - Fetch real test media: `./scripts/download-test-media.sh`
 - Test fast (~30 s): `./scripts/test.sh`
 - Test all (~2 min): `./scripts/test.sh --integration`
+
+## Video quality presets (-q)
+| Preset | Engine | Scale | GPU | Speed | Quality |
+|---|---|---|---|---|---|
+| `low` | ffmpeg lanczos | 2× | no | ~seconds | smooth interpolation, no AI detail |
+| `medium` *(default)* | RealCUGAN | 2× | yes | ~2 min/10 s (320×180); ~30 min/30 s (640×480) | AI-enhanced, good balance |
+| `high` | Real-ESRGAN | 4× | yes | ~2 h/30 s | best quality, highest VRAM use |
+
+Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` for ffmpeg at 4×).
 
 ## Architecture
 - `input/images/` → drop images here before running; gitignored
@@ -39,9 +50,11 @@ Local CLI upscaling pipeline for images and video; runs fully on-device (Ubuntu,
 - `scripts/setup.sh` → installs Real-ESRGAN venv and Video2X binary into `tools/`
 - `scripts/download-test-media.sh` → fetches public-domain test media into `test-assets/`
 - `test-assets/` → synthetic test fixtures (committed) + real media (gitignored)
-- `img-implementation.md` → full image setup plan, risks, test plan, model reference
-- `vid-implementation.md` → full video setup plan, risks, test plan, decision log
-- `local-upscaling-audio.md` → audio tool survey (AudioSR, DeepFilterNet); not yet implemented
+- `docs/img-implementation.md` → full image setup plan, risks, test plan, model reference
+- `docs/vid-implementation.md` → full video setup plan, risks, test plan, decision log
+- `docs/local-upscaling-audio.md` → audio tool survey (AudioSR, DeepFilterNet); not yet implemented
+- `docs/test-assets-vid-img-aud.md` → test asset sources and guidelines
+- `docs/market-gap.md` → market gap analysis and background research
 
 ## Rules
 - Always run a single-image smoke test before any long batch job
@@ -51,7 +64,7 @@ Local CLI upscaling pipeline for images and video; runs fully on-device (Ubuntu,
 - Face enhancement (`-F`) is opt-in only — degrades non-portrait content
 
 ## Workflow
-- New tool or model: add a section to the relevant `*-implementation.md` first; get approval before coding
+- New tool or model: add a section to the relevant `docs/*-implementation.md` first; get approval before coding
 - Commits: `#type, what` (add/fix/doc/refactor)
 - Test gate: smoke test + error path tests pass before any batch use
 - Ask before changing wrapper exit-code contracts or default flag values
@@ -65,5 +78,5 @@ Local CLI upscaling pipeline for images and video; runs fully on-device (Ubuntu,
 ## Out of scope
 - Cloud upscaling services
 - GUI tools (Upscayl, Chainner)
-- Audio upscaling (`local-upscaling-audio.md` is reference only; no scripts yet)
+- Audio upscaling (`docs/local-upscaling-audio.md` is reference only; no scripts yet)
 - Anime-only workflows (Anime4K available via `-e anime4k` but not the primary path
