@@ -1,0 +1,62 @@
+# Roadmap — version tags
+
+Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usability, 2. efficient image/video processing; TUI/feedback/setup fold into usability.
+
+Reference job for all targets below: **1 hour 854×480 @ 25 fps → 1920×1080** (90,000 frames), path = AI 2× → 1708×960 → lanczos 1.125× → 1080p. Integer-scale engines can't do 2.25× directly; 4×-then-downscale is ~6× the work for discarded detail.
+
+## v0 (current, baseline)
+
+Shipped: `-q` presets, Rich TUI (frame/fps/ETA/VRAM/temp/clock), perf estimator with hardware profiles, dry-run, JSON output, GPU check, test suite.
+
+Measured on RTX 3050 Mobile (4 GB):
+
+| Preset | fps @ 854×480 | Reference job |
+|---|---|---|
+| `medium` (RealCUGAN 2×, NCNN/Vulkan) | ~0.46 | **~55 h** |
+| `high` (Real-ESRGAN 4×) | ~0.08 | ~13 days (wrong tool for SD→HD) |
+
+Two problems: a 55 h job has no resume (one crash = total loss), and the NCNN/Vulkan path uses shader FP16 — Tensor cores idle, still-image-grade models doing video work.
+
+## v1.0 — reference job survivable, then overnight
+
+Exit criteria: reference job completes **≤ 10 h** on RTX 3050 Mobile, survives `kill -9` / power loss losing ≤ one chunk, and never needs babysitting.
+
+### Survivability (usability)
+
+- **Chunked processing + `--resume`** — ffmpeg-segment into ~5 min chunks, upscale per chunk, concat; per-chunk state in sidecar JSON. Market-gap: single most impactful feature for jobs > 10 min. Acceptance: kill mid-job, resume, lose ≤ 1 chunk; output bit-identical duration vs single-pass.
+- **Progress sidecar JSON + TUI re-attach** — writer updates `{output}.progress.json` (chunk, frame, fps, ETA) every few seconds; `tui-monitor.py --attach` tails it. Acceptance: SSH drop, reconnect, live state visible.
+- **Calibration probe → trustworthy ETA** — upscale ~30 real source frames before committing, print measured fps, ETA, temp-disk and VRAM forecast; abort prompt if disk short. Replaces spec-ratio projection for the pre-job estimate. Acceptance: ETA within ±20 % of actual on test clips.
+- **Post-mux integrity check** — duration drift ≤ 100 ms, frame count match, A/V sync ≤ 40 ms; fail loudly with actionable message (guards Video2X's documented 2-frame-loss / audio-drift bugs).
+- **Temp-disk preflight** — estimate chunk + temp size, verify free space on output filesystem before start.
+- **Throttle warning in TUI** — flag sustained SM-clock drop at temp ≥ threshold (data already polled).
+
+### Efficiency (image/video processing)
+
+- **`-q fast` preset: compact video model** — realesr-animevideov3 / 2x-Compact (SRVGGNet). Biggest single lever, expected 2–5×; video tolerates lighter models than stills (temporal masking). Acceptance: ≥ 2 fps @ 854×480 on 3050 Mobile + documented quality spot-check vs `medium`.
+- **VRAM probe → auto tile + FP16 defaults** — map free VRAM to tile size (200/4 GB, 300/6 GB, 400/8 GB, 600/12 GB), FP16 on where supported. Acceptance: no OOM at defaults on 4 GB; no manual `--tile` needed for common inputs.
+- **NVENC/NVDEC encode/decode** — keep x264 off the critical path (~1.2×, stabler fps).
+
+## v2.0 — differentiation
+
+Exit criteria: reference job **≤ 4 h** on 3050 Mobile; feature set matches the "Your Target" column of the market-gap feature matrix.
+
+- **TensorRT / PyTorch FP16 backend with frame batching** — use Tensor cores instead of NCNN shader FP16; expected 2–4× on RTX 30-series. Larger lift; keep NCNN as fallback.
+- **Duplicate-frame skip** — mpdecimate-style dedup before inference, reuse upscaled frame via mapping; 1.2–2× on low-motion content.
+- **RIFE frame interpolation** — `--interpolate 2x`.
+- **Audio SR** — AudioSR wrapper: standalone subcommand + opt-in `--enhance-audio` for video (only 3-modality OSS CLI; see [local-upscaling-audio.md](local-upscaling-audio.md)).
+- **`--thermal-mode conservative|balanced|performance`** — act on throttle data, not just warn.
+- **Content-based model auto-select** — anime vs photographic vs text-heavy detection → model recommendation.
+- **Unified command grammar** — `tool upscale image|video|audio --input … --output …` front-end over existing scripts.
+- **Batch/glob input + per-job audit manifest** — input/output hashes, model, tile, precision, per-stage timings, warnings.
+
+## Hardware: squeeze vs buy
+
+Software first — v1+v2 levers stack to roughly **5–10×** on owned hardware before any purchase. Buy only when the job class changes:
+
+| Trigger | Buy | Why |
+|---|---|---|
+| Routine `high`/4× archival on hour-long files | used RTX 3090 (24 GB) | VRAM is the binding constraint (the `--tile 512` rule exists because of 4 GB), ~3–5× throughput, no tiling |
+| Several files/day, SD→HD | RTX 4070 Super (12 GB) | ~2.5–3×, current-gen efficiency |
+| 1080p→4K hour-long content | 16–24 GB class | 5× input pixels of the reference job; even squeezed 3050 is back to ~30+ h |
+
+Caveats: estimator's geometric-mean model flatters high-bandwidth cards (5090 "28×" is theoretical; NCNN path can't use its Tensor cores either); 3050 Mobile is a laptop part — a desktop card implies a new machine, not an upgrade.

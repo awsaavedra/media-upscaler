@@ -1,7 +1,11 @@
 # media-restoration
 
 ## Project
-Local CLI upscaling pipeline for images and video; runs fully on-device (Ubuntu, RTX 3050–3060 Ti, 32 GB RAM).
+AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 3050–3060 Ti, 32 GB RAM) — a free, private CLI alternative to cloud/subscription upscalers for anyone restoring old photos and footage.
+
+Focus — areas to improve ([market gap](docs/market-gap.md), [roadmap](docs/roadmap.md)):
+1. **Usability** — painless setup, clear errors, decent feedback: live TUI progress (ETA, fps, VRAM); jobs should never need babysitting.
+2. **Efficient processing** — faster image/video upscaling on mid-range GPUs: FP16 + VRAM-aware tile auto-tuning, trustworthy runtime estimates, resumable long jobs.
 
 ## Quickstart
 1. Verify GPU: `nvidia-smi` — driver must be loaded
@@ -59,6 +63,7 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 - `docs/local-upscaling-audio.md` → audio tool survey (AudioSR, DeepFilterNet); not yet implemented
 - `docs/test-assets-vid-img-aud.md` → test asset sources and guidelines
 - `docs/market-gap.md` → market gap analysis and background research
+- `docs/roadmap.md` → v1/v2 version-tag roadmap; reference-job math, squeeze-vs-buy hardware guidance
 
 ## Rules
 - Always run a single-image smoke test before any long batch job
