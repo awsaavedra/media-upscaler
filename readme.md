@@ -1,4 +1,4 @@
-# data-restoration-vid-img-aud
+# media-restoration
 
 ## Project
 Local CLI upscaling pipeline for images and video; runs fully on-device (Ubuntu, RTX 3050–3060 Ti, 32 GB RAM).
