@@ -25,8 +25,9 @@ Two problems: a 55 h job has no resume (one crash = total loss), and the NCNN/Vu
 
 Exit criteria: reference job completes **≤ 10 h** on RTX 3050 Mobile, survives `kill -9` / power loss losing ≤ one chunk, and never needs babysitting.
 
-### Survivability (usability)
+### Usability & survivability
 
+- **Batch folder input — zero per-file invocation** — drop a folder (or loose files) into `input/images/` / `input/video/` and run one command (no args = sweep both): recursive discovery by extension, idempotent output naming mirroring the input tree, skip already-converted outputs, continue-on-error with end-of-run summary. Composes with chunked resume: an interrupted sweep restarts where it left off. Acceptance: drop a nested folder of mixed media into `input/video/`, one command converts everything, a second run is a no-op, one corrupt file doesn't abort the set.
 - **Chunked processing + `--resume`** — ffmpeg-segment into ~5 min chunks, upscale per chunk, concat; per-chunk state in sidecar JSON. Market-gap: single most impactful feature for jobs > 10 min. Acceptance: kill mid-job, resume, lose ≤ 1 chunk; output bit-identical duration vs single-pass.
 - **Progress sidecar JSON + TUI re-attach** — writer updates `{output}.progress.json` (chunk, frame, fps, ETA) every few seconds; `tui-monitor.py --attach` tails it. Acceptance: SSH drop, reconnect, live state visible.
 - **Calibration probe → trustworthy ETA** — upscale ~30 real source frames before committing, print measured fps, ETA, temp-disk and VRAM forecast; abort prompt if disk short. Replaces spec-ratio projection for the pre-job estimate. video2x `-b` (benchmark: discard frames, report avg fps) is the ready-made primitive. Acceptance: ETA within ±20 % of actual on test clips.
@@ -51,7 +52,7 @@ Exit criteria: reference job **≤ 4 h** on 3050 Mobile; feature set matches the
 - **`--thermal-mode conservative|balanced|performance`** — act on throttle data, not just warn.
 - **Content-based model auto-select** — anime vs photographic vs text-heavy detection → model recommendation.
 - **Unified command grammar** — `tool upscale image|video|audio --input … --output …` front-end over existing scripts.
-- **Batch/glob input + per-job audit manifest** — input/output hashes, model, tile, precision, per-stage timings, warnings.
+- **Per-job audit manifest** — input/output hashes, model, tile, precision, per-stage timings, warnings. (Batch folder input itself is v1; this adds the audit trail + glob patterns outside `input/`.)
 
 ## Hardware: squeeze vs buy
 
