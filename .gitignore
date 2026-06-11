@@ -39,6 +39,17 @@ test-assets/images/gt/*
 !test-assets/images/gt/bsd_21077.png
 !test-assets/images/gt/bsd_299086.png
 !test-assets/images/gt/bsd_45096.png
+# Demo set — architecture, signage, degraded scan; LR inputs + GT originals
+!test-assets/images/demo/
+test-assets/images/demo/gt/*
+!test-assets/images/demo/gt/budapest-parliament.jpg
+!test-assets/images/demo/gt/76-ball-sign.jpg
+!test-assets/images/demo/gt/nypl-1908-scan.jpg
+test-assets/images/demo/*
+!test-assets/images/demo/budapest-parliament-lr480.png
+!test-assets/images/demo/budapest-parliament-854x480.png
+!test-assets/images/demo/76-ball-sign-lr320.png
+!test-assets/images/demo/nypl-1908-scan-lr480.png
 test-assets/videos/*
 !test-assets/videos/test-clip.mp4
 
