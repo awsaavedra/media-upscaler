@@ -1,24 +1,43 @@
 # media-restoration
 
 ## Project
-AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 3050–3060 Ti, 32 GB RAM) — a free, private CLI alternative to cloud/subscription upscalers for restoring old photos and footage.
+AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 3050–3060 Ti, 32 GB RAM) — a free, private alternative to cloud/subscription upscalers for restoring old photos and footage. Primary interface is an interactive TUI; shell scripts are the processing back-end.
 
 ## Quickstart
 1. Verify GPU: `nvidia-smi` — driver must be loaded
 2. Run setup: `./scripts/setup.sh`
 3. Check GPU readiness: `./scripts/check-gpu.sh`
 4. Drop media into `input/images/` or `input/video/`
-5. Upscale image: `./scripts/upscale-image.sh input/images/photo.jpg output/images/`
-6. Upscale video: `./scripts/upscale-video.sh -q medium input/video/clip.mp4 output/video/clip-2x.mp4`
+5. **Launch TUI**: `./tool tui`  ← primary interface; all options configurable here
+6. Select files, adjust preset with `[P]`, advanced options with `[o]`, then `[s]` to start
+
+### TUI keyboard shortcuts
+| Key | Action |
+|---|---|
+| `↑ / ↓` | Navigate file list |
+| `SPACE` | Toggle file selection; ETA updates instantly |
+| `a / n / t` | Select all / none / invert |
+| `r` | Retry all failed |
+| `f` | Force re-run a done item |
+| `s` | Start batch |
+| `p` | Pause / resume active job |
+| `c` | Cancel active job |
+| `P` | Cycle quality preset (low → medium → high → ultrahigh) |
+| `o` | Options — set scale, model, format, tile, face, engine overrides |
+| `d` | Change input directory |
+| `q` | Quit |
+
+### Direct CLI (back-end scripts, power users)
 
 ## Stack
 - Bash, Python 3.12; NVIDIA driver ≥ 525, CUDA 11.8+
 - Image: Real-ESRGAN Python (`RealESRGAN_x4plus`); Video: Video2X 6.4.0 AppImage (Vulkan/NCNN)
-- Frame handling: FFmpeg; TUI: `rich` (realesrgan venv)
+- Frame handling: FFmpeg; TUI: Textual (realesrgan venv)
 
 ## Commands
-- Dev (image): `./scripts/upscale-image.sh input/images/photo.jpg output/images/`
-- Dev (video): `./scripts/upscale-video.sh -q medium input/video/clip.mp4 output/video/clip-2x.mp4`
+- **TUI (primary)**: `./tool tui [-q PRESET] [--input DIR]`
+- Image (direct): `./scripts/upscale-image.sh input/images/photo.jpg output/images/`
+- Video (direct): `./scripts/upscale-video.sh -q medium input/video/clip.mp4 output/video/clip-2x.mp4`
 - Build: `./scripts/setup.sh`
 - Test all: `./scripts/test.sh --integration`
 - Test fast (~30 s): `./scripts/test.sh`
@@ -49,7 +68,8 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 │   ├── test.sh                         # test suite; --integration enables full tests
 │   ├── download-test-media.sh          # fetches public-domain test media → test-assets/
 │   ├── perf-estimate.py                # hardware throughput estimator; --video/--target/--list-hw
-│   └── tui-monitor.py                  # Rich TUI progress monitor; --frames N
+│   ├── tui-monitor.py                  # legacy Rich monitor (video-only, superseded by tui.py)
+│   └── tui.py                          # Textual TUI — primary interface; entry point: ./tool tui
 ├── docs/
 │   ├── roadmap.md                      # v1/v2/v3 roadmap; reference-job math, hardware guidance
 │   ├── market-gap.md                   # market gap analysis and background research

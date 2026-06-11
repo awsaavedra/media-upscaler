@@ -433,7 +433,7 @@ KeyHintsBar {
 """
 
 _ROW1 = "[↑↓] navigate   [SPACE] toggle   [a] all   [n] none   [t] invert   [r] retry failed   [f] force redo"
-_ROW2 = "[s] start   [p] pause/resume   [c] cancel job   [P] preset   [d] change dir   [q] quit"
+_ROW2 = "[s] start   [p] pause/resume   [c] cancel job   [P] preset   [o] options   [d] change dir   [q] quit"
 
 
 class KeyHintsBar(Static):
@@ -455,6 +455,99 @@ EtaBar {
 
 class EtaBar(Static):
     _render_markup = False  # [a] [s] in hint text are literal, not markup
+
+
+# ── Options modal ────────────────────────────────────────────────────────────
+
+_OPT_DEFAULTS: dict[str, str] = {
+    "img_scale": "", "img_model": "", "img_format": "", "img_tile": "",
+    "img_face": "0", "vid_scale": "", "vid_engine": "",
+}
+
+_IMG_FORMATS = ["", "png", "jpg", "webp"]
+_VID_ENGINES = ["", "realesrgan", "realcugan", "anime4k"]
+
+
+class OptionsModal(ModalScreen):
+    CSS = """
+    OptionsModal { align: center middle; }
+    #opt-dialog {
+        width: 66;
+        height: auto;
+        padding: 1 2;
+        border: thick $primary;
+        background: $surface;
+    }
+    .opt-section { color: $text-muted; margin-top: 1; margin-bottom: 0; }
+    .opt-row { height: 1; margin-bottom: 0; }
+    .opt-lbl { width: 10; }
+    .opt-inp { width: 14; }
+    .opt-hint { width: 1fr; color: $text-muted; }
+    #opt-btns { margin-top: 1; }
+    .opt-btn { min-width: 10; margin-right: 1; }
+    """
+
+    def __init__(self, current: dict[str, str]) -> None:
+        super().__init__()
+        self._current = dict(current)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="opt-dialog"):
+            yield Label("── Image overrides  (blank = preset default)", classes="opt-section")
+            with Horizontal(classes="opt-row"):
+                yield Label("scale",  classes="opt-lbl")
+                yield Input(value=self._current["img_scale"],  id="img_scale",  classes="opt-inp")
+                yield Label("integer, e.g. 2 or 4",           classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("model",  classes="opt-lbl")
+                yield Input(value=self._current["img_model"],  id="img_model",  classes="opt-inp")
+                yield Label("name or /abs/path/to/model.pth", classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("format", classes="opt-lbl")
+                yield Input(value=self._current["img_format"], id="img_format", classes="opt-inp")
+                yield Label("png | jpg | webp",               classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("tile",   classes="opt-lbl")
+                yield Input(value=self._current["img_tile"],   id="img_tile",   classes="opt-inp")
+                yield Label("0 = auto-VRAM",                  classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("face",   classes="opt-lbl")
+                yield Input(value=self._current["img_face"],   id="img_face",   classes="opt-inp")
+                yield Label("1 = on  (GFPGAN; slow)",         classes="opt-hint")
+            yield Label("── Video overrides", classes="opt-section")
+            with Horizontal(classes="opt-row"):
+                yield Label("scale",  classes="opt-lbl")
+                yield Input(value=self._current["vid_scale"],  id="vid_scale",  classes="opt-inp")
+                yield Label("integer override",               classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("engine", classes="opt-lbl")
+                yield Input(value=self._current["vid_engine"], id="vid_engine", classes="opt-inp")
+                yield Label("realesrgan | realcugan | anime4k", classes="opt-hint")
+            with Horizontal(id="opt-btns"):
+                yield Button("Apply",  id="opt-apply",  classes="opt-btn", variant="primary")
+                yield Button("Clear",  id="opt-clear",  classes="opt-btn")
+                yield Button("Cancel", id="opt-cancel", classes="opt-btn")
+
+    def _collect(self) -> dict[str, str]:
+        vals: dict[str, str] = {}
+        for key in _OPT_DEFAULTS:
+            try:
+                vals[key] = self.query_one(f"#{key}", Input).value.strip()
+            except Exception:
+                vals[key] = self._current.get(key, "")
+        return vals
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "opt-apply":
+            self.dismiss(self._collect())
+        elif event.button.id == "opt-clear":
+            self.dismiss(dict(_OPT_DEFAULTS))
+        else:
+            self.dismiss(None)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
 
 
 # ── Dir prompt modal ─────────────────────────────────────────────────────────
@@ -524,6 +617,7 @@ class MediaRestoreApp(App):
         Binding("p",     "pause_resume",  show=False),
         Binding("c",     "cancel_job",    show=False),
         Binding("P",     "cycle_preset",  show=False),
+        Binding("o",     "options",       show=False),
         Binding("q",     "request_quit",  show=False),
     ]
 
@@ -540,6 +634,7 @@ class MediaRestoreApp(App):
         self._paused = False
         self._gpu: dict = {}
         self._actual_secs: dict[str, list[float]] = {}
+        self._opts: dict[str, str] = dict(_OPT_DEFAULTS)
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -847,23 +942,25 @@ class MediaRestoreApp(App):
         self._run_next(remaining)
 
     def _build_cmd(self, item: MediaItem) -> list[str] | None:
+        o = self._opts
         if item.media_type == "image":
             if not SCRIPT_IMAGE.exists():
                 return None
-            return [
-                "bash", str(SCRIPT_IMAGE),
-                "-q", self._preset,
-                str(item.path),
-                str(item.output_path.parent),
-            ]
+            cmd = ["bash", str(SCRIPT_IMAGE), "-q", self._preset,
+                   str(item.path), str(item.output_path.parent)]
+            if o["img_scale"]:   cmd += ["-s", o["img_scale"]]
+            if o["img_model"]:   cmd += ["-m", o["img_model"]]
+            if o["img_format"]:  cmd += ["-f", o["img_format"]]
+            if o["img_tile"]:    cmd += ["-t", o["img_tile"]]
+            if o["img_face"] == "1": cmd += ["-F"]
+            return cmd
         if not SCRIPT_VIDEO.exists():
             return None
-        return [
-            "bash", str(SCRIPT_VIDEO),
-            "-q", self._preset,
-            str(item.path),
-            str(item.output_path),
-        ]
+        cmd = ["bash", str(SCRIPT_VIDEO), "-q", self._preset,
+               str(item.path), str(item.output_path)]
+        if o["vid_scale"]:  cmd += ["-s", o["vid_scale"]]
+        if o["vid_engine"]: cmd += ["-e", o["vid_engine"]]
+        return cmd
 
     def _handle_progress_line(
         self, line: str, item: MediaItem, total_files: int
@@ -923,8 +1020,10 @@ class MediaRestoreApp(App):
     # ── Misc ──────────────────────────────────────────────────────────────────
 
     def _update_header(self) -> None:
+        active_opts = [k for k, v in self._opts.items() if v and v != "0"]
+        ovr = f"   Overrides [{len(active_opts)} set ●]" if active_opts else ""
         self.query_one("#header-bar", Static).update(
-            f"Preset [{self._preset} ▾]   Input [{self._input_dir} ▶]",
+            f"Preset [{self._preset} ▾]   Input [{self._input_dir} ▶]{ovr}",
         )
 
     def action_cycle_preset(self) -> None:
@@ -939,6 +1038,20 @@ class MediaRestoreApp(App):
         self._update_ui()
         self._update_header()
         self._log(f"Preset → {self._preset}")
+
+    def action_options(self) -> None:
+        def _apply(result: dict[str, str] | None) -> None:
+            if result is None:
+                return
+            self._opts = result
+            self._update_header()
+            active = [k for k, v in result.items() if v and v != "0"]
+            if active:
+                self._log(f"Options set: {', '.join(f'{k}={self._opts[k]}' for k in active)}")
+            else:
+                self._log("Options cleared — using preset defaults")
+
+        self.push_screen(OptionsModal(self._opts), _apply)
 
     def action_change_dir(self) -> None:
         def _apply(new_path: str | None) -> None:
