@@ -12,6 +12,7 @@ FACE_ENHANCE=0
 BATCH=0
 DRY_RUN=0
 JSON_OUT=0
+_TILE_EXPLICIT=0   # set to 1 if -t is passed; suppresses VRAM auto-tile
 
 REALESRGAN_DIR="${REALESRGAN_DIR:-$PROJECT_ROOT/tools/realesrgan}"
 INFERENCE_SCRIPT="$REALESRGAN_DIR/inference_realesrgan.py"
@@ -50,7 +51,7 @@ while getopts ':q:s:m:f:t:Fbjnh' opt; do
     s) SCALE=$OPTARG ;;
     m) MODEL=$OPTARG ;;
     f) FORMAT=$OPTARG ;;
-    t) TILE=$OPTARG ;;
+    t) TILE=$OPTARG; _TILE_EXPLICIT=1 ;;
     F) FACE_ENHANCE=1 ;;
     b) BATCH=1 ;;
     j) JSON_OUT=1 ;;
@@ -84,6 +85,21 @@ esac
 # Boundary checks — fail fast
 nvidia-smi >/dev/null 2>&1 \
   || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
+
+# VRAM probe → auto tile size (skipped if -t was explicit or DRY_RUN)
+if [ "$_TILE_EXPLICIT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  _FREE_MiB=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null \
+    | head -1 | tr -d ' ')
+  if [ -n "$_FREE_MiB" ] && [ "$_FREE_MiB" -gt 0 ] 2>/dev/null; then
+    if   [ "$_FREE_MiB" -ge 12288 ]; then TILE=600
+    elif [ "$_FREE_MiB" -ge 8192  ]; then TILE=512
+    elif [ "$_FREE_MiB" -ge 6144  ]; then TILE=400
+    elif [ "$_FREE_MiB" -ge 4096  ]; then TILE=300
+    else                                   TILE=200
+    fi
+    printf '[vram] %s MiB free → tile=%s\n' "$_FREE_MiB" "$TILE" >&2
+  fi
+fi
 
 [ -f "$VENV_PYTHON" ] \
   || { printf 'Python venv not found at %s\n  Run scripts/setup.sh to install\n' "$VENV_PYTHON" >&2; exit 2; }

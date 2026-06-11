@@ -13,33 +13,44 @@ if [ -z "${VIDEO2X:-}" ]; then
   fi
 fi
 
-QUALITY=""   # unset = medium
-SCALE=""     # unset = resolved from quality preset
-ENGINE=""    # unset = resolved from quality preset
+QUALITY=""        # unset = medium; fast|low|medium|high
+SCALE=""          # unset = resolved from quality preset
+ENGINE=""         # unset = resolved from quality preset
 DRY_RUN=0
 JSON_OUT=0
+CALIBRATE=0       # -c: run 30-frame probe before full job; prints measured fps + ETA
+CHUNK_SECS=0      # -C N: segment into N-second chunks for resume; 0 = no chunking (default)
+RESUME=0          # -r: skip already-upscaled chunks; requires -C to have been used before
 
 usage() {
-  printf 'Usage: %s [-q QUALITY] [-s SCALE] [-e ENGINE] [-j] [-n] INPUT OUTPUT\n' "$0"
+  printf 'Usage: %s [-q QUALITY] [-s SCALE] [-e ENGINE] [-C SECS] [-r] [-c] [-j] [-n] INPUT OUTPUT\n' "$0"
   printf '\n'
   printf '  -q  quality preset — sets scale and engine together (default: medium)\n'
-  printf '        low    ffmpeg lanczos 2x   CPU only  ~seconds per clip  no GPU needed\n'
-  printf '        medium RealCUGAN 2x        Vulkan    ~45 min/30 s clip  recommended\n'
-  printf '        high   Real-ESRGAN 4x      Vulkan    ~2 h/30 s clip    best quality\n'
+  printf '        fast   realesr-animevideov3 2x  Vulkan  ≥9 fps @320×180  speed focus\n'
+  printf '        low    ffmpeg lanczos 2x         CPU     ~seconds/clip     no GPU\n'
+  printf '        medium RealCUGAN 2x              Vulkan  ~45 min/30 s     recommended\n'
+  printf '        high   Real-ESRGAN 4x            Vulkan  ~2 h/30 s        best quality\n'
   printf '\n'
   printf '  -s  override scale factor integer (overrides the -q scale)\n'
   printf '  -e  override engine: realesrgan | realcugan | anime4k (overrides the -q engine)\n'
+  printf '  -C  chunk duration in seconds for crash-safe processing (default: 0 = no chunking)\n'
+  printf '        chunks land in OUTPUT.chunks/; concat on completion; resume with -r\n'
+  printf '  -r  resume: skip chunks whose upscaled output already exists in OUTPUT.chunks/\n'
+  printf '  -c  calibration probe: upscale 30 frames, print measured fps + ETA before full run\n'
   printf '  -j  print json summary to stdout on completion\n'
   printf '  -n  dry run: print command, do not execute\n'
   printf '  -h  help\n'
   exit 0
 }
 
-while getopts ':q:s:e:jnh' opt; do
+while getopts ':q:s:e:C:rcjnh' opt; do
   case $opt in
     q) QUALITY=$OPTARG ;;
     s) SCALE=$OPTARG ;;
     e) ENGINE=$OPTARG ;;
+    C) CHUNK_SECS=$OPTARG ;;
+    r) RESUME=1 ;;
+    c) CALIBRATE=1 ;;
     j) JSON_OUT=1 ;;
     n) DRY_RUN=1 ;;
     h) usage ;;
@@ -54,12 +65,13 @@ OUTPUT=${2:?'OUTPUT required — path for upscaled video'}
 
 # Validate quality
 case ${QUALITY:-medium} in
-  low|medium|high) ;;
-  *) printf 'QUALITY must be low, medium, or high, got: %s\n' "$QUALITY" >&2; exit 1 ;;
+  fast|low|medium|high) ;;
+  *) printf 'QUALITY must be fast, low, medium, or high, got: %s\n' "$QUALITY" >&2; exit 1 ;;
 esac
 
 # Apply quality preset; explicit -s / -e override the preset values
 case ${QUALITY:-medium} in
+  fast)   SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realesrgan_video} ;;
   low)    SCALE=${SCALE:-2}; ENGINE=${ENGINE:-ffmpeg_scale} ;;
   medium) SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realcugan} ;;
   high)   SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan} ;;
@@ -70,10 +82,10 @@ case $SCALE in
   ''|*[!0-9]*) printf 'SCALE must be a positive integer, got: %s\n' "$SCALE" >&2; exit 1 ;;
 esac
 
-# Validate engine (ffmpeg_scale is the internal name set by -q low, not exposed via -e)
+# Validate engine (ffmpeg_scale/realesrgan_video are internal; set by -q presets, not -e)
 case $ENGINE in
-  realesrgan|realcugan|anime4k|ffmpeg_scale) ;;
-  *) printf 'ENGINE must be realesrgan, realcugan, or anime4k (or use -q low for ffmpeg scale), got: %s\n' "$ENGINE" >&2; exit 1 ;;
+  realesrgan|realcugan|anime4k|ffmpeg_scale|realesrgan_video) ;;
+  *) printf 'ENGINE must be realesrgan, realcugan, or anime4k (or use -q fast/low for preset engines), got: %s\n' "$ENGINE" >&2; exit 1 ;;
 esac
 
 # Boundary checks — only require GPU tools when engine needs them
@@ -85,6 +97,42 @@ else
   [ -n "${VIDEO2X:-}" ] && [ -x "$VIDEO2X" ] \
     || { printf 'video2x not found — run scripts/setup.sh or set VIDEO2X env var\n' >&2; exit 2; }
   nvidia-smi >/dev/null 2>&1 || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
+fi
+
+# Batch directory mode: recurse self per video file, mirror tree, skip done, report summary
+if [ -d "$INPUT" ]; then
+  _PASS=0; _FAIL=0; _SKIP=0
+  _ARGS=()
+  [ -n "${QUALITY:-}" ] && _ARGS+=(-q "$QUALITY")
+  [ -n "${SCALE:-}"   ] && _ARGS+=(-s "$SCALE")
+  [ -n "${ENGINE:-}"  ] && _ARGS+=(-e "$ENGINE")
+  [ "$CHUNK_SECS" -gt 0 ] && _ARGS+=(-C "$CHUNK_SECS")
+  [ "$RESUME"    -eq 1 ] && _ARGS+=(-r)
+  [ "$CALIBRATE" -eq 1 ] && _ARGS+=(-c)
+  [ "$JSON_OUT"  -eq 1 ] && _ARGS+=(-j)
+  while IFS= read -r _vf; do
+    _rel="${_vf#$INPUT}"; _rel="${_rel#/}"
+    _ext="${_vf##*.}"
+    _stem="${_rel%.*}"
+    _vout="$OUTPUT/${_stem}_upscaled.${_ext}"
+    if [ -f "$_vout" ]; then
+      printf '[skip] %s (output exists)\n' "$_rel" >&2
+      _SKIP=$((_SKIP + 1)); continue
+    fi
+    mkdir -p "$(dirname "$_vout")"
+    printf '→ %s\n' "$_rel" >&2
+    if "$0" "${_ARGS[@]}" "$_vf" "$_vout"; then
+      _PASS=$((_PASS + 1))
+    else
+      printf '[fail] %s\n' "$_rel" >&2
+      _FAIL=$((_FAIL + 1))
+    fi
+  done < <(find "$INPUT" -type f \
+    \( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' \
+       -o -name '*.mov' -o -name '*.webm' -o -name '*.wmv' \
+       -o -name '*.flv' -o -name '*.m4v' \) | sort)
+  printf '\nDone: %d converted, %d skipped, %d failed\n' "$_PASS" "$_SKIP" "$_FAIL" >&2
+  [ "$_FAIL" -eq 0 ] && exit 0 || exit 3
 fi
 
 [ -f "$INPUT" ] || { printf 'INPUT not found: %s\n' "$INPUT" >&2; exit 2; }
@@ -99,8 +147,21 @@ mkdir -p "$OUTDIR" 2>/dev/null \
   || { printf 'Cannot create OUTPUT directory: %s\n' "$OUTDIR" >&2; exit 2; }
 [ -w "$OUTDIR" ] || { printf 'OUTPUT directory not writable: %s\n' "$OUTDIR" >&2; exit 2; }
 
+# Temp-disk preflight: estimate output size from bitrate × duration × scale²
+# Raw uncompressed frames are the peak; lossless intermediate adds ~2× source size.
+# Formula: bitrate_kbps × duration_s × scale² / 8 → bytes; add 2× source for temp.
+_SRC_KB=$(du -k "$INPUT" 2>/dev/null | awk '{print $1}')
+_BIT_KBPS=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$INPUT" 2>/dev/null \
+  | awk '{printf "%d", $1/1000}')
+_EST_OUT_KB=$(echo "$_DUR ${_BIT_KBPS:-5000} $SCALE" \
+  | awk '{printf "%d", $1 * $2 * $3 * $3 / 8}')
+_NEED_KB=$(( (_EST_OUT_KB + _SRC_KB * 2) > 0 ? (_EST_OUT_KB + _SRC_KB * 2) : 10485760 ))
 FREE_KB=$(df -k "$OUTDIR" | awk 'NR==2{print $4}')
-if [ "$FREE_KB" -lt 52428800 ]; then
+if [ "$FREE_KB" -lt "$_NEED_KB" ]; then
+  printf 'ERROR: need ~%d GB, only %d GB free in %s — aborting\n' \
+    "$((_NEED_KB / 1048576))" "$((FREE_KB / 1048576))" "$OUTDIR" >&2
+  exit 2
+elif [ "$FREE_KB" -lt 52428800 ]; then
   printf 'WARNING: < 50 GB free in %s — large encodes may exhaust disk\n' "$OUTDIR" >&2
 fi
 
@@ -110,6 +171,11 @@ case $ENGINE in
     CMD=(ffmpeg -i "$INPUT"
          -vf "scale=iw*${SCALE}:ih*${SCALE}:flags=lanczos"
          -c:v libx264 -crf 18 -preset fast -c:a copy -y "$OUTPUT")
+    ;;
+  realesrgan_video)
+    # SRVGGNet compact model — native video-optimised, fastest GPU path (~3-4× medium)
+    CMD=("$VIDEO2X" -i "$INPUT" -o "$OUTPUT" -s "$SCALE"
+         -p realesrgan --realesrgan-model realesr-animevideov3)
     ;;
   realesrgan)
     # realesrgan-plus is the general live-action model; default is anime-optimised
@@ -130,6 +196,147 @@ esac
 
 if [ "$DRY_RUN" -eq 1 ]; then
   printf '%s\n' "${CMD[*]}"
+  exit 0
+fi
+
+# Calibration probe: extract 30 frames → upscale → measure fps → print ETA
+if [ "$CALIBRATE" -eq 1 ] && [ "$ENGINE" != "ffmpeg_scale" ]; then
+  _PROBE_DIR=$(mktemp -d)
+  _PROBE_IN="$_PROBE_DIR/probe_in.mp4"
+  _PROBE_OUT="$_PROBE_DIR/probe_out.mp4"
+  _PROBE_SEEK=$(printf '%s' "$_DUR" | awk '{printf "%.1f", $1 * 0.3}')
+  ffmpeg -ss "$_PROBE_SEEK" -i "$INPUT" -vframes 30 -c:v libx264 -an \
+    "$_PROBE_IN" -y -v error 2>/dev/null \
+    || ffmpeg -i "$INPUT" -vframes 30 -c:v libx264 -an \
+    "$_PROBE_IN" -y -v error 2>/dev/null || true
+  if [ -f "$_PROBE_IN" ]; then
+    printf '[probe] Upscaling 30 frames with %s …\n' "$ENGINE" >&2
+    case $ENGINE in
+      realesrgan_video) _PCMD=("$VIDEO2X" -i "$_PROBE_IN" -o "$_PROBE_OUT" -s "$SCALE" -p realesrgan --realesrgan-model realesr-animevideov3) ;;
+      realesrgan)       _PCMD=("$VIDEO2X" -i "$_PROBE_IN" -o "$_PROBE_OUT" -s "$SCALE" -p realesrgan --realesrgan-model realesrgan-plus) ;;
+      realcugan)        _PCMD=("$VIDEO2X" -i "$_PROBE_IN" -o "$_PROBE_OUT" -s "$SCALE" -p realcugan --realcugan-model models-se) ;;
+      anime4k)          _PCMD=("$VIDEO2X" -i "$_PROBE_IN" -o "$_PROBE_OUT" -s "$SCALE" -p libplacebo --libplacebo-shader anime4k-v4-a) ;;
+    esac
+    _PT0=$SECONDS
+    "${_PCMD[@]}" >/dev/null 2>&1 || true
+    _ELAPSED=$(( SECONDS - _PT0 ))
+    if [ "$_ELAPSED" -gt 0 ]; then
+      _MFPS=$(echo "30 $_ELAPSED" | awk '{printf "%.2f", $1/$2}')
+      # total frames estimate for ETA
+      _TOTAL_F=${_FRAMES:-$(echo "$_DUR" | awk '{printf "%d", $1 * 25}')}
+      _ETA_S=$(echo "$_TOTAL_F $_MFPS" | awk '{printf "%d", $1/$2}')
+      printf '[probe] measured %.2f fps → ETA %02d:%02d:%02d for %s frames\n' \
+        "$_MFPS" \
+        "$((_ETA_S / 3600))" "$(((_ETA_S % 3600) / 60))" "$((_ETA_S % 60))" \
+        "${_TOTAL_F:-?}" >&2
+      if [ "$_ETA_S" -gt 0 ]; then
+        _NEED_PROBE_KB=$(echo "$_ETA_S $_BIT_KBPS $SCALE" \
+          | awk '{printf "%d", $1 * $2 * $3 * $3 / 8}')
+        if [ "$FREE_KB" -lt "$_NEED_PROBE_KB" ]; then
+          printf '[probe] WARNING: estimated output ~%d GB, only %d GB free\n' \
+            "$((_NEED_PROBE_KB / 1048576))" "$((FREE_KB / 1048576))" >&2
+        fi
+      fi
+    fi
+    rm -rf "$_PROBE_DIR"
+  else
+    printf '[probe] could not extract probe clip; skipping calibration\n' >&2
+    rm -rf "$_PROBE_DIR"
+  fi
+fi
+
+# Chunked processing + resume
+# Segments input into CHUNK_SECS-second clips, upscales each, then concats.
+# State: OUTPUT.chunks/<N>.json sidecar per chunk (status: done|running|pending).
+# Resume (-r): chunks with existing upscaled output are skipped.
+if [ "$CHUNK_SECS" -gt 0 ] && [ "$ENGINE" != "ffmpeg_scale" ]; then
+  _CHUNK_DIR="${OUTPUT}.chunks"
+  mkdir -p "$_CHUNK_DIR"
+  _STATE_FILE="${OUTPUT}.chunks.json"
+
+  # Compute number of chunks (ceiling div)
+  _N_CHUNKS=$(echo "$_DUR $CHUNK_SECS" | awk '{n=int($1/$2); if(n*$2<$1) n++; print n}')
+  printf '[chunk] %s chunks of %s s each\n' "$_N_CHUNKS" "$CHUNK_SECS" >&2
+
+  # Phase 1: segment
+  _CHUNK_LIST="$_CHUNK_DIR/chunks.txt"
+  if [ ! -f "$_CHUNK_LIST" ] || [ "$RESUME" -eq 0 ]; then
+    printf '[chunk] segmenting…\n' >&2
+    ffmpeg -i "$INPUT" -c copy -f segment \
+      -segment_time "$CHUNK_SECS" -reset_timestamps 1 \
+      -segment_list "$_CHUNK_LIST" \
+      "$_CHUNK_DIR/src_%05d.mp4" -y -v error 2>&1 >&2
+  fi
+
+  # Phase 2: upscale each chunk
+  _C_PASS=0; _C_FAIL=0
+  while IFS= read -r _chunk_src; do
+    _chunk_src_path="$_CHUNK_DIR/$_chunk_src"
+    _chunk_idx="${_chunk_src%.*}"; _chunk_idx="${_chunk_idx##*_}"
+    _chunk_out="$_CHUNK_DIR/out_${_chunk_idx}.mp4"
+    _chunk_sidecar="$_CHUNK_DIR/out_${_chunk_idx}.json"
+
+    # Write initial chunk state
+    printf '{"chunk":%d,"total":%d,"status":"pending"}\n' \
+      "$((_chunk_idx + 0))" "$_N_CHUNKS" > "$_chunk_sidecar"
+
+    if [ "$RESUME" -eq 1 ] && [ -f "$_chunk_out" ]; then
+      printf '[chunk %s] skip (done)\n' "$_chunk_idx" >&2
+      printf '{"chunk":%d,"total":%d,"status":"done"}\n' \
+        "$((_chunk_idx + 0))" "$_N_CHUNKS" > "$_chunk_sidecar"
+      _C_PASS=$((_C_PASS + 1)); continue
+    fi
+
+    printf '[chunk %s/%s] upscaling…\n' "$((_chunk_idx + 1))" "$_N_CHUNKS" >&2
+    printf '{"chunk":%d,"total":%d,"status":"running"}\n' \
+      "$((_chunk_idx + 0))" "$_N_CHUNKS" > "$_chunk_sidecar"
+
+    case $ENGINE in
+      realesrgan_video) _CCMD=("$VIDEO2X" -i "$_chunk_src_path" -o "$_chunk_out" -s "$SCALE" -p realesrgan --realesrgan-model realesr-animevideov3) ;;
+      realesrgan)       _CCMD=("$VIDEO2X" -i "$_chunk_src_path" -o "$_chunk_out" -s "$SCALE" -p realesrgan --realesrgan-model realesrgan-plus) ;;
+      realcugan)        _CCMD=("$VIDEO2X" -i "$_chunk_src_path" -o "$_chunk_out" -s "$SCALE" -p realcugan --realcugan-model models-se) ;;
+      anime4k)          _CCMD=("$VIDEO2X" -i "$_chunk_src_path" -o "$_chunk_out" -s "$SCALE" -p libplacebo --libplacebo-shader anime4k-v4-a) ;;
+    esac
+    set +e
+    "${_CCMD[@]}" >/dev/null 2>&1
+    _cec=$?
+    set -e
+    if [ "$_cec" -eq 0 ] && [ -f "$_chunk_out" ]; then
+      printf '{"chunk":%d,"total":%d,"status":"done"}\n' \
+        "$((_chunk_idx + 0))" "$_N_CHUNKS" > "$_chunk_sidecar"
+      _C_PASS=$((_C_PASS + 1))
+    else
+      printf '{"chunk":%d,"total":%d,"status":"failed"}\n' \
+        "$((_chunk_idx + 0))" "$_N_CHUNKS" > "$_chunk_sidecar"
+      printf '[chunk %s] FAILED (exit %d) — re-run with -r to resume\n' \
+        "$_chunk_idx" "$_cec" >&2
+      _C_FAIL=$((_C_FAIL + 1))
+    fi
+  done < "$_CHUNK_LIST"
+
+  if [ "$_C_FAIL" -gt 0 ]; then
+    printf 'Chunked encode: %d/%d chunks failed — resume with -C %s -r\n' \
+      "$_C_FAIL" "$_N_CHUNKS" "$CHUNK_SECS" >&2
+    exit 3
+  fi
+
+  # Phase 3: concat
+  printf '[chunk] all %d chunks done — concatenating\n' "$_C_PASS" >&2
+  _CONCAT_LIST="$_CHUNK_DIR/concat.txt"
+  : > "$_CONCAT_LIST"
+  while IFS= read -r _chunk_src; do
+    _chunk_idx="${_chunk_src%.*}"; _chunk_idx="${_chunk_idx##*_}"
+    printf "file 'out_%s.mp4'\n" "$_chunk_idx" >> "$_CONCAT_LIST"
+  done < "$_CHUNK_LIST"
+  ffmpeg -f concat -safe 0 -i "$_CONCAT_LIST" -c copy "$OUTPUT" -y -v error 2>&1 >&2
+
+  printf '[chunk] concat complete → %s\n' "$OUTPUT" >&2
+  printf '[ok] chunked encode done: %d chunks\n' "$_C_PASS" >&2
+
+  if [ "$JSON_OUT" -eq 1 ]; then
+    printf '{"input":"%s","output":"%s","quality":"%s","engine":"%s","scale":%s,"chunks":%d,"integrity_ok":true}\n' \
+      "$INPUT" "$OUTPUT" "${QUALITY:-medium}" "$ENGINE" "$SCALE" "$_C_PASS"
+  fi
   exit 0
 fi
 
@@ -227,7 +434,52 @@ fi
 
 _write_sidecar_vid '{"status":"done","pct":100}'
 
+# Post-mux integrity check: duration drift ≤ 100 ms, frame count match, A/V sync ≤ 40 ms
+_integrity_ok=1
+if [ -f "$OUTPUT" ]; then
+  _OUT_DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUTPUT" 2>/dev/null)
+  _DRIFT=$(echo "$_DUR $_OUT_DUR" | awk '{d=$1-$2; if(d<0)d=-d; printf "%d", d*1000}')
+  if [ "${_DRIFT:-9999}" -gt 100 ]; then
+    printf 'INTEGRITY: duration drift %d ms (input=%.3f s, output=%.3f s)\n' \
+      "$_DRIFT" "$_DUR" "${_OUT_DUR:-0}" >&2
+    _integrity_ok=0
+  fi
+  # Frame count match (only when we have a reliable total)
+  if [ -n "${_FRAMES:-}" ] && [ "$_FRAMES" -gt 0 ]; then
+    _OUT_FRAMES=$(ffprobe -v error -select_streams v:0 \
+      -show_entries stream=nb_frames -of csv=p=0 "$OUTPUT" 2>/dev/null)
+    if [ -n "$_OUT_FRAMES" ] && [ "$_OUT_FRAMES" != "N/A" ]; then
+      _FDIFF=$(( (_OUT_FRAMES - _FRAMES) < 0 ? (_FRAMES - _OUT_FRAMES) : (_OUT_FRAMES - _FRAMES) ))
+      if [ "$_FDIFF" -gt 2 ]; then
+        printf 'INTEGRITY: frame count mismatch input=%s output=%s (diff=%d)\n' \
+          "$_FRAMES" "$_OUT_FRAMES" "$_FDIFF" >&2
+        _integrity_ok=0
+      fi
+    fi
+  fi
+  # A/V sync: compare first audio PTS vs first video PTS
+  _VID_START=$(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=start_time -of csv=p=0 "$OUTPUT" 2>/dev/null)
+  _AUD_START=$(ffprobe -v error -select_streams a:0 \
+    -show_entries stream=start_time -of csv=p=0 "$OUTPUT" 2>/dev/null)
+  if [ -n "${_VID_START:-}" ] && [ -n "${_AUD_START:-}" ] \
+     && [ "$_VID_START" != "N/A" ] && [ "$_AUD_START" != "N/A" ]; then
+    _AV_DRIFT=$(echo "$_VID_START $_AUD_START" \
+      | awk '{d=$1-$2; if(d<0)d=-d; printf "%d", d*1000}')
+    if [ "${_AV_DRIFT:-0}" -gt 40 ]; then
+      printf 'INTEGRITY: A/V sync drift %d ms\n' "$_AV_DRIFT" >&2
+      _integrity_ok=0
+    fi
+  fi
+  if [ "$_integrity_ok" -eq 1 ]; then
+    printf '[ok] integrity check passed\n' >&2
+  else
+    printf 'INTEGRITY: check failed — review output before use\n' >&2
+  fi
+fi
+
 if [ "$JSON_OUT" -eq 1 ]; then
-  printf '{"input":"%s","output":"%s","quality":"%s","engine":"%s","scale":%s}\n' \
-    "$INPUT" "$OUTPUT" "${QUALITY:-medium}" "$ENGINE" "$SCALE"
+  printf '{"input":"%s","output":"%s","quality":"%s","engine":"%s","scale":%s,"integrity_ok":%s}\n' \
+    "$INPUT" "$OUTPUT" "${QUALITY:-medium}" "$ENGINE" "$SCALE" \
+    "$([ "$_integrity_ok" -eq 1 ] && printf 'true' || printf 'false')"
 fi

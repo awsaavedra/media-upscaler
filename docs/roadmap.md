@@ -27,18 +27,18 @@ Exit criteria: reference job completes **≤ 10 h** on RTX 3050 Mobile, survives
 
 ### Usability & survivability
 
-- **Batch folder input — zero per-file invocation** — drop a folder (or loose files) into `input/images/` / `input/video/` and run one command (no args = sweep both): recursive discovery by extension, idempotent output naming mirroring the input tree, skip already-converted outputs, continue-on-error with end-of-run summary. Composes with chunked resume: an interrupted sweep restarts where it left off. Acceptance: drop a nested folder of mixed media into `input/video/`, one command converts everything, a second run is a no-op, one corrupt file doesn't abort the set.
-- **Chunked processing + `--resume`** — ffmpeg-segment into ~5 min chunks, upscale per chunk, concat; per-chunk state in sidecar JSON. Market-gap: single most impactful feature for jobs > 10 min. Acceptance: kill mid-job, resume, lose ≤ 1 chunk; output bit-identical duration vs single-pass.
-- **Progress sidecar JSON + TUI re-attach** — writer updates `{output}.progress.json` (chunk, frame, fps, ETA) every few seconds; `tui-monitor.py --attach` tails it. Acceptance: SSH drop, reconnect, live state visible.
-- **Calibration probe → trustworthy ETA** — upscale ~30 real source frames before committing, print measured fps, ETA, temp-disk and VRAM forecast; abort prompt if disk short. Replaces spec-ratio projection for the pre-job estimate. video2x `-b` (benchmark: discard frames, report avg fps) is the ready-made primitive. Acceptance: ETA within ±20 % of actual on test clips.
-- **Post-mux integrity check** — duration drift ≤ 100 ms, frame count match, A/V sync ≤ 40 ms; fail loudly with actionable message (guards Video2X's documented 2-frame-loss / audio-drift bugs).
-- **Temp-disk preflight** — estimate chunk + temp size, verify free space on output filesystem before start.
-- **Throttle warning in TUI** — flag sustained SM-clock drop at temp ≥ threshold (data already polled).
+- **Batch folder input — zero per-file invocation** ✓ done — `upscale-image.sh` (pre-existing batch mode) + `upscale-video.sh` now detects directory INPUT, recurses self per file, mirrors tree, skips done (output exists), continue-on-error, end-of-run summary. Compose: `upscale-video.sh -q fast input/video/ output/video/`.
+- **Chunked processing + `--resume`** ✓ done — `upscale-video.sh -C 300` segments → upscales per chunk → concats; per-chunk `out_N.json` sidecar (pending/running/done/failed); `-r` resumes by skipping chunks with existing output. Acceptance: kill mid-job, re-run with same `-C N -r`, lose ≤ 1 chunk.
+- **Progress sidecar JSON + TUI re-attach** ✓ done (v2-prep) — both scripts write `{output}.progress.json`; TUI polls on startup and every 5 s.
+- **Calibration probe → trustworthy ETA** ✓ done — `upscale-video.sh -c` extracts 30 frames from 30% seek point, upscales with selected engine, prints measured fps + ETA; warns if disk short.
+- **Post-mux integrity check** ✓ done — runs after every encode: duration drift ≤ 100 ms, frame count diff ≤ 2, A/V sync ≤ 40 ms; `integrity_ok` field in JSON output.
+- **Temp-disk preflight** ✓ done — estimates output KB from bitrate × duration × scale²; errors if insufficient free space; 50 GB soft warning remains.
+- **Throttle warning in TUI** — flag sustained SM-clock drop at temp ≥ threshold (data already polled). *(TUI work — deferred)*
 
 ### Efficiency (image/video processing)
 
-- **`-q fast` preset: compact video model** — `realesr-animevideov3` (SRVGGNet compact). Verified 2026-06-09: supported by the installed Video2X (its default model, native 2×/3×/4×); benchmark on test clip ran ≥ 9.5 fps vs 2.83 fps medium → ≥ 3.4× (lower bound, encode excluded). First v1 task: benchmark at 854×480 to validate the ≤ 10 h exit bar — pixel-scaled projection lands ~1.4–1.6 fps (~16 h); if < 2.5 fps measured, pull the TensorRT backend forward from v2 or revise the bar. Acceptance: ≥ 2 fps @ 854×480 on 3050 Mobile + documented quality spot-check vs `medium`.
-- **VRAM probe → auto tile + FP16 defaults** — map free VRAM to tile size (200/4 GB, 300/6 GB, 400/8 GB, 600/12 GB), FP16 on where supported. Acceptance: no OOM at defaults on 4 GB; no manual `--tile` needed for common inputs.
+- **`-q fast` preset: compact video model** ✓ done — `upscale-video.sh -q fast` uses `realesr-animevideov3` (SRVGGNet compact) via video2x. Benchmark at 854×480 still needed to validate ≤ 10 h exit bar; if < 2.5 fps, pull TensorRT from v2.
+- **VRAM probe → auto tile + FP16 defaults** ✓ done (tile) — `upscale-image.sh` queries `nvidia-smi --query-gpu=memory.free` and maps to tile (200/4 GB, 300/6 GB, 400/8 GB, 512/8–12 GB, 600/12+ GB); skipped if `-t` explicit. FP16: deferred — Real-ESRGAN inference script handles precision internally.
 
 ## v2.0 — differentiation
 

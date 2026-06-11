@@ -38,6 +38,10 @@ AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 30
 - **TUI (primary)**: `./tool tui [-q PRESET] [--input DIR]`
 - Image (direct): `./scripts/upscale-image.sh input/images/photo.jpg output/images/`
 - Video (direct): `./scripts/upscale-video.sh -q medium input/video/clip.mp4 output/video/clip-2x.mp4`
+- Video batch: `./scripts/upscale-video.sh -q fast input/video/ output/video/`
+- Video chunked (crash-safe): `./scripts/upscale-video.sh -q medium -C 300 input/video/clip.mp4 output/video/clip.mp4`
+- Video resume: `./scripts/upscale-video.sh -q medium -C 300 -r input/video/clip.mp4 output/video/clip.mp4`
+- Video calibrate: `./scripts/upscale-video.sh -q medium -c input/video/clip.mp4 output/video/clip.mp4`
 - Build: `./scripts/setup.sh`
 - Test all: `./scripts/test.sh --integration`
 - Test fast (~30 s): `./scripts/test.sh`
@@ -52,6 +56,7 @@ AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 30
 ### Video quality presets (`-q`)
 | Preset | Engine | Scale | GPU | Speed | Quality |
 |---|---|---|---|---|---|
+| `fast` | realesr-animevideov3 | 2× | yes | ≥9 fps @320×180 | SRVGGNet compact; fastest AI path |
 | `low` | ffmpeg lanczos | 2× | no | ~seconds | smooth interpolation, no AI detail |
 | `medium` *(default)* | RealCUGAN | 2× | yes | ~2 min/10 s (320×180) | AI-enhanced, good balance |
 | `high` | Real-ESRGAN | 4× | yes | ~2 h/30 s | best quality, highest VRAM use |
