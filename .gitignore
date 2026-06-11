@@ -10,10 +10,35 @@ output/
 results/
 test-assets/output/
 
-# Test assets — only test-image.png and test-clip.mp4 are tracked.
-# Everything else in test-assets/ is ignored to prevent large media from landing in git.
+# Test assets — synthetic fixtures and SR benchmarks committed; real/large media ignored.
 test-assets/images/*
 !test-assets/images/test-image.png
+!test-assets/images/test-tiny.png
+# Set5 SR benchmark — LR inputs (bicubic ×4 downsamples, 128px wide)
+!test-assets/images/baby.png
+!test-assets/images/bird.png
+!test-assets/images/butterfly.png
+!test-assets/images/head.png
+!test-assets/images/woman.png
+# BSD100 SR benchmark — 5 diverse natural scenes (LR inputs)
+!test-assets/images/bsd_101085.png
+!test-assets/images/bsd_148026.png
+!test-assets/images/bsd_21077.png
+!test-assets/images/bsd_299086.png
+!test-assets/images/bsd_45096.png
+# Ground truth originals (HR) — kept alongside LR for quality comparison
+!test-assets/images/gt/
+test-assets/images/gt/*
+!test-assets/images/gt/baby.png
+!test-assets/images/gt/bird.png
+!test-assets/images/gt/butterfly.png
+!test-assets/images/gt/head.png
+!test-assets/images/gt/woman.png
+!test-assets/images/gt/bsd_101085.png
+!test-assets/images/gt/bsd_148026.png
+!test-assets/images/gt/bsd_21077.png
+!test-assets/images/gt/bsd_299086.png
+!test-assets/images/gt/bsd_45096.png
 test-assets/videos/*
 !test-assets/videos/test-clip.mp4
 
