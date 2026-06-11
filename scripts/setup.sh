@@ -162,16 +162,34 @@ for url, filename in models:
 EOF
 }
 
+prepare_test_assets() {
+  log "Preparing test assets..."
+  command -v convert >/dev/null 2>&1 \
+    || die "imagemagick not found — install: sudo apt install imagemagick"
+  "$SCRIPT_DIR/download-test-media.sh"
+}
+
+run_initial_sweep() {
+  log "Running initial upscale sweep → output/images/test-results/ ..."
+  mkdir -p "$PROJECT_ROOT/output/images/test-results"
+  "$SCRIPT_DIR/upscale-image.sh" \
+    "$PROJECT_ROOT/test-assets/images" \
+    "$PROJECT_ROOT/output/images/test-results"
+  log "Sweep complete. Results in output/images/test-results/"
+}
+
 check_prerequisites
 install_video2x
 install_realesrgan
 download_model_weights
+prepare_test_assets
+run_initial_sweep
 
 log ""
 log "Setup complete."
 log "  video2x:    $VIDEO2X_DIR/video2x"
 log "  realesrgan: $REALESRGAN_DIR"
+log "  test results: output/images/test-results/"
 log ""
-log "Smoke test:"
-log "  ./scripts/upscale-video.sh -n test-assets/videos/test-clip.mp4 /tmp/out.mp4"
-log "  ./scripts/upscale-image.sh -n test-assets/images/test-image.png /tmp/out/"
+log "To re-run the sweep after changes:  ./scripts/teardown.sh --rerun"
+log "To clear test results only:         ./scripts/teardown.sh"

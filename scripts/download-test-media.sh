@@ -5,10 +5,11 @@
 #   Internet Archive  — robots.txt: User-agent:* Disallow:/control/ /report/ (downloads allowed)
 #   Wikimedia Commons — upload CDN robots.txt: Disallow:/wikipedia/commons/archive/ only
 #
-# All content is public domain. Files land in test-assets/ which is gitignored.
+# All content is public domain or Creative Commons licensed.
+# LR inputs for demo GT images are created via ImageMagick after download.
 #
 # Usage:
-#   ./scripts/download-test-media.sh          # download images + videos
+#   ./scripts/download-test-media.sh          # download images + videos + create LR inputs
 #   ./scripts/download-test-media.sh --check  # verify files exist without downloading
 #
 # Audio sources (FreeSound) require a registered account and are not automated here.
@@ -28,9 +29,10 @@ UA="upscaling-test-fetcher/1.0 (research; https://github.com/awsaavedra/data-res
 # ── Asset manifest ─────────────────────────────────────────────────────────────
 # Each entry: local_path | source_url | description | license
 declare -a ASSETS=(
-  # Images — Wikimedia Commons upload CDN (public domain)
-  "$IMG_DIR/canal-street-1900s.jpg|https://upload.wikimedia.org/wikipedia/commons/d/de/Canal_Street_Bourbon_to_St_Chas_1900s.jpg|Canal Street New Orleans 1900s, 665×527 JPEG, real grain and JPEG compression artifacts|Public domain"
-  "$IMG_DIR/church-building-1906.jpg|https://upload.wikimedia.org/wikipedia/commons/6/6f/First_Saint_Rose_of_Lima_Roman_Catholic_Church_building_with_inset_of_Father_Henry_F._Murray_1906.jpg|Church building 1906, 730×580 JPEG, historic photograph degradation|Public domain"
+  # Demo GT images — Wikimedia Commons upload CDN
+  # LR inputs are created from these after download (see create_lr_inputs below)
+  "$IMG_DIR/demo/gt/flower-foliage.jpg|https://upload.wikimedia.org/wikipedia/commons/4/4b/Flower_stock_photo.jpg|Flower stock photo 2160×1440, foliage/petal chaos, high-freq fine detail|CC0 / public domain"
+  "$IMG_DIR/demo/gt/nyc-night.jpg|https://upload.wikimedia.org/wikipedia/commons/2/22/New_York_City_at_night_HDR.jpg|New York City at night 3024×1998, point-light sources, dark shadow regions|CC BY-SA"
 
   # Videos — Internet Archive (public domain, stream-cut to 30 s)
   # Full films are 10s–100s MB; ffmpeg streams only the needed segment
@@ -86,3 +88,31 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
 else
   [ "$downloaded" -gt 0 ] && printf '%d file(s) downloaded.\n' "$downloaded" || printf 'All files already present.\n'
 fi
+
+# ── LR input creation ─────────────────────────────────────────────────────────
+# Create bicubic-downscaled LR inputs from downloaded demo GT images.
+# Each entry: lr_path | gt_path | resize_geometry
+declare -a LR_PAIRS=(
+  "$IMG_DIR/demo/flower-foliage-lr540.png|$IMG_DIR/demo/gt/flower-foliage.jpg|540x360"
+  "$IMG_DIR/demo/nyc-night-lr756.png|$IMG_DIR/demo/gt/nyc-night.jpg|756x500"
+)
+
+[ "$CHECK_ONLY" -eq 0 ] && printf '\n── Creating LR inputs ──\n'
+for pair in "${LR_PAIRS[@]}"; do
+  IFS='|' read -r lr gt geom <<< "$pair"
+  lr_name=$(basename "$lr")
+  if [ -f "$lr" ]; then
+    [ "$CHECK_ONLY" -eq 0 ] && ok "$lr_name (already present)"
+    continue
+  fi
+  if [ ! -f "$gt" ]; then
+    [ "$CHECK_ONLY" -eq 0 ] && printf '[SKIP] %s — GT not present, skipping LR creation\n' "$lr_name"
+    continue
+  fi
+  [ "$CHECK_ONLY" -eq 0 ] && dl "Creating $lr_name from $(basename "$gt") at ${geom}…"
+  command -v convert >/dev/null 2>&1 \
+    || { printf '[ERR]  imagemagick convert required for LR creation\n' >&2; exit 1; }
+  convert "$gt" -filter Cubic -resize "$geom" "$lr" \
+    && ok "$lr_name (created)" \
+    || { printf '[ERR]  convert failed for %s\n' "$lr_name" >&2; exit 1; }
+done

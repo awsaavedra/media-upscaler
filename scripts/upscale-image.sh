@@ -172,7 +172,7 @@ _infer() {
   if [ "$DRY_RUN" -eq 1 ]; then
     printf '%s\n' "${cmd[*]}"
     [ -n "$tmp" ] && rm -rf "$tmp"
-    return
+    return 0
   fi
   mkdir -p "$dst"
   if [ -t 1 ] || [ -t 2 ]; then
