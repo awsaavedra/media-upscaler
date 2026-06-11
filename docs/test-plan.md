@@ -317,6 +317,204 @@ No GT pairs for video — all assessments are qualitative / frame-level visual i
 
 ---
 
+### flower-foliage-q20 — JPEG compression artifact removal
+
+| Field | Value |
+|---|---|
+| LR | `test-assets/images/demo/flower-foliage-lr540-q20.jpg` — 540×360, JPEG Q20 |
+| GT | `test-assets/images/demo/gt/flower-foliage.jpg` — 2160×1440 |
+| Scale | 4× |
+| License | CC0 / public domain — Wikimedia Commons |
+| Category | JPEG blocking, DCT ringing, compression noise on top of bicubic blur |
+| What it stresses | Model must remove 8×8 DCT block artifacts simultaneously with upscale without over-smoothing |
+
+**Create LR (idempotent):**
+```bash
+[ -f test-assets/images/demo/flower-foliage-lr540-q20.jpg ] || \
+  convert test-assets/images/demo/gt/flower-foliage.jpg \
+    -filter Cubic -resize 540x360 -quality 20 \
+    test-assets/images/demo/flower-foliage-lr540-q20.jpg
+```
+
+**Invocation**
+```bash
+./scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus \
+  test-assets/images/demo/flower-foliage-lr540-q20.jpg /tmp/out/
+```
+
+**Pass criteria (qualitative)**
+- JPEG block boundaries (8×8 grid) not visible in output at full zoom
+- Petal and stamen detail still resolved — not over-smoothed to suppress artifacts
+- Compare side-by-side against clean `flower-foliage-lr540_out.png`: degraded input should differ (softer restoration, fewer false-high-freq edges)
+
+---
+
+### great-wave — anime / illustration style
+
+| Field | Value |
+|---|---|
+| LR | `test-assets/images/demo/great-wave-lr600.png` — 600×411 |
+| GT | `test-assets/images/demo/gt/great-wave.jpg` — 8242×5640 |
+| Effective scale | ~13.7× (run at 4×; compare sub-region qualitatively against GT) |
+| License | Public domain — Wikimedia Commons (Hokusai, pre-1828) |
+| Category | Ukiyo-e woodblock print — flat colour fills, strong outlines, chaotic wave texture |
+| What it stresses | Anime model selection: `x4plus_anime_6B` must preserve illustrative style; `x4plus` photo model injects false grain into flat fills |
+
+**Fetch GT (idempotent):**
+```bash
+[ -f test-assets/images/demo/gt/great-wave.jpg ] || \
+  curl -L "https://upload.wikimedia.org/wikipedia/commons/0/0d/Great_Wave_off_Kanagawa2.jpg" \
+    -o test-assets/images/demo/gt/great-wave.jpg
+[ -f test-assets/images/demo/great-wave-lr600.png ] || \
+  convert test-assets/images/demo/gt/great-wave.jpg \
+    -filter Cubic -resize 600x test-assets/images/demo/great-wave-lr600.png
+```
+
+**Invocation — anime model (correct)**
+```bash
+./scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus_anime_6B \
+  test-assets/images/demo/great-wave-lr600.png /tmp/out-anime/
+```
+
+**Invocation — photo model (comparison baseline)**
+```bash
+./scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus \
+  test-assets/images/demo/great-wave-lr600.png /tmp/out-photo/
+```
+
+**Pass criteria (qualitative)**
+- `anime_6B` output: flat blue sky and water fills stay smooth; wave foam lines crisp without photorealistic grain
+- `x4plus` output (comparison): typically adds false grain to flat fills — confirms anime_6B is the correct model for this content
+- Wave foam curlicues sharp; Mt Fuji silhouette clean line without fringing
+
+---
+
+### douglas-portrait — face enhancement / historical portrait
+
+| Field | Value |
+|---|---|
+| LR | `test-assets/images/demo/douglas-portrait-lr198.png` — 198×235 |
+| GT | `test-assets/images/demo/gt/douglas-portrait.jpg` — 791×938 |
+| Scale | 4× (output 792×940 ≈ original GT size) |
+| License | Public domain — Wikimedia Commons (Frederick Douglass c1860s daguerreotype) |
+| Category | Historical portrait photograph, facial landmarks, halftone degradation |
+| What it stresses | GFPGAN face detection at small input (198px); hallucination of features that contradict original expression |
+
+**Fetch GT (idempotent):**
+```bash
+[ -f test-assets/images/demo/gt/douglas-portrait.jpg ] || \
+  curl -L "https://upload.wikimedia.org/wikipedia/commons/8/85/Frederick_Douglass_c1860s.jpg" \
+    -o test-assets/images/demo/gt/douglas-portrait.jpg
+[ -f test-assets/images/demo/douglas-portrait-lr198.png ] || \
+  convert test-assets/images/demo/gt/douglas-portrait.jpg \
+    -filter Cubic -resize 198x test-assets/images/demo/douglas-portrait-lr198.png
+```
+
+**Invocation — base**
+```bash
+./scripts/upscale-image.sh -s 4 \
+  test-assets/images/demo/douglas-portrait-lr198.png /tmp/out-base/
+```
+
+**Invocation — with face enhancement**
+```bash
+./scripts/upscale-image.sh -s 4 -F \
+  test-assets/images/demo/douglas-portrait-lr198.png /tmp/out-face/
+```
+
+**Pass criteria (qualitative)**
+- Base output: clothing and background sharpened without false textures
+- Face-enhanced (`-F`): eyes, nose, and lips visibly improved vs base; detail matches GT portrait expression
+- `-F` output must differ from base (confirms GFPGAN fired despite small 198px input)
+- No hallucinated facial features that contradict the original expression
+
+---
+
+---
+
+## Image 4K demo set
+
+These three images are used to validate highest-end upscaling to 4K-class output. All LRs are 960px wide (bicubic downscale); 4× produces ≥3840px wide output. GTs are committed as download targets; LRs are committed.
+
+### metro-landscape — dense urban cityscape
+
+| Field | Value |
+|---|---|
+| LR | `test-assets/images/demo/metro-landscape-lr960.png` — 960×640 |
+| GT | `test-assets/images/demo/gt/metro-landscape.jpg` — 5472×3648 |
+| Output | 3840×2560 (4K+) |
+| License | CC0 — Unsplash via Wikimedia Commons |
+| Category | Dense urban buildings, fine window grid, varied facade textures |
+| What it stresses | Fine repeated structural elements (windows) at 4K scale; color fidelity on glass/concrete |
+
+**Invocation**
+```bash
+./scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus -t 512 \
+  test-assets/images/demo/metro-landscape-lr960.png /tmp/out/
+```
+
+**Pass criteria**
+- Output dims: 3840×2560
+- Window grids sharp without ghosting or doubling
+- Sky/building boundary clean; no color fringing on glass facades
+
+---
+
+### portrait-conversation — natural-light multi-face portrait
+
+| Field | Value |
+|---|---|
+| LR | `test-assets/images/demo/portrait-conversation-lr960.png` — 960×640 |
+| GT | `test-assets/images/demo/gt/portrait-conversation.jpg` — 5760×3840 |
+| Output | 3840×2560 (4K+) |
+| License | CC0 — Unsplash via Wikimedia Commons |
+| Category | Two faces, natural window light, clothing texture, background bokeh |
+| What it stresses | Multi-face skin rendering at 4K; clothing fabric texture; shallow-DOF background handling |
+
+**Invocation (base)**
+```bash
+./scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus -t 512 \
+  test-assets/images/demo/portrait-conversation-lr960.png /tmp/out/
+```
+
+**Invocation (face enhance)**
+```bash
+./scripts/upscale-image.sh -s 4 -F -t 512 \
+  test-assets/images/demo/portrait-conversation-lr960.png /tmp/out-face/
+```
+
+**Pass criteria**
+- Output dims: 3840×2560
+- Faces natural — no over-sharpened pores or waxy skin
+- Clothing weave distinct; background bokeh smooth without tiling artifacts
+
+---
+
+### yosemite-valley — mountain landscape, natural detail
+
+| Field | Value |
+|---|---|
+| LR | `test-assets/images/demo/yosemite-valley-lr960.png` — 960×434 |
+| GT | `test-assets/images/demo/gt/yosemite-valley.jpg` — 4169×1884 |
+| Output | 3840×1736 (4K+ width) |
+| License | CC BY-SA 3.0 — Wikimedia Commons |
+| Category | Valley panorama — granite cliff faces, pine forest canopy, waterfall, sky gradient |
+| What it stresses | Multi-scale natural texture (rock vs trees vs water); distant fine detail; large smooth sky |
+
+**Invocation**
+```bash
+./scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus -t 512 \
+  test-assets/images/demo/yosemite-valley-lr960.png /tmp/out/
+```
+
+**Pass criteria**
+- Output dims: 3840×1736
+- Granite cliff texture sharp without false grain injection
+- Tree canopy distinct, not smeared into uniform green mass
+- Sky clean and smooth; no tiling seams at tile boundaries
+
+---
+
 ## Assets needed — fetch on demand
 
 The following categories still have no test asset. Download and create an LR pair locally when you need to test them. The GT files do not need to be committed — just the LR inputs (once created).
@@ -376,6 +574,12 @@ curl -s "https://commons.wikimedia.org/w/api.php?action=query&titles=File:190604
 | Historical scan / noise | nypl-1908-scan | Committed ✓ |
 | Foliage / chaotic fine detail | flower-foliage | Committed ✓ |
 | Night / low-light | nyc-night | Committed ✓ |
+| JPEG compression artifact removal | flower-foliage-q20 | Committed ✓ |
+| Anime / illustration style | great-wave (Hokusai) | Committed ✓ |
+| Portrait / face enhancement | douglas-portrait (Douglass c1860s) | Committed ✓ |
+| 4K cityscape | metro-landscape | Committed ✓ |
+| 4K multi-face portrait | portrait-conversation | Committed ✓ |
+| 4K mountain landscape | yosemite-valley | Committed ✓ |
 | Historical video / motion | sf-market-street-1906 | Committed ✓ |
 | Mid-century color video | prelinger-france-1947 | Committed ✓ |
 | Mixed text + halftone photo | — | Fetch on demand (see above) |

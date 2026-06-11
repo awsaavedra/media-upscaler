@@ -2,14 +2,19 @@
 # Upscaling pipeline test suite.
 #
 # Usage:
-#   ./scripts/test.sh              # fast tests + result verification (~30 s, no GPU)
-#   ./scripts/test.sh --integration  # + per-asset inference, face enhance, video encode (~10 min)
+#   ./scripts/test.sh                    # fast tests + result verification (~30 s, no GPU)
+#   ./scripts/test.sh --integration-images  # + per-asset image inference (~5 min GPU)
+#   ./scripts/test.sh --integration         # + image inference + video encodes (~15 min GPU)
 #
 # Fast tests:  GPU checks, arg validation, dry-run, single synthetic smoke, result verification.
-# Result verification: checks output/images/test-results/ produced by setup.sh or
-#   teardown --rerun. No GPU needed; just file-existence and dimension checks.
-# Integration: per-asset GPU inference runs with specific models/flags, video encodes.
-#   Run scripts/setup.sh or scripts/teardown.sh --rerun first to populate test-results/.
+# Result verification (section 6): checks output/images/test-results/ produced by setup.sh or
+#   teardown --rerun. No GPU needed; just file-existence and dimension checks. 11 assets.
+# Image integration (sections 10–19, 25–27): per-asset GPU inference with specific models/flags.
+#   Assets: butterfly 2x, baby 4x, face-enhance -F (baby), bsd_45096, 76-ball-sign,
+#   budapest-parliament, flower-foliage (clean), nyc-night (tiled), nypl-1908-scan,
+#   image batch, flower-foliage-q20 (JPEG artifact), great-wave (anime_6B), douglas-portrait (-F).
+# Video integration (sections 20–24): video source validation + encodes.
+#   test-clip low+medium, sf-1906, france-1947.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,7 +22,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 INTEGRATION=0
-[ "${1:-}" = "--integration" ] && INTEGRATION=1
+INTEGRATION_VIDEO=0
+case "${1:-}" in
+  --integration)        INTEGRATION=1; INTEGRATION_VIDEO=1 ;;
+  --integration-images) INTEGRATION=1 ;;
+esac
 
 PASS=0; FAIL=0; SKIP=0
 _TMPDIR=""
@@ -183,6 +192,46 @@ else
   assert_image \
     "nypl-1908-scan (historical scan / grain / faded ink) → 1920×1256" \
     "$RESULTS/demo/nypl-1908-scan-lr480_out.png" "1920x1256" 1000
+
+  # flower-foliage-q20: same scene as flower-foliage but input was JPEG Q20 compressed.
+  # Failure mode: 8×8 DCT block boundaries remain visible after upscale; or model
+  # over-smooths to suppress blocks and loses petal/stamen detail.
+  assert_image \
+    "flower-foliage-q20 (JPEG artifact / blocking removal) → 2160×1440" \
+    "$RESULTS/demo/flower-foliage-lr540-q20_out.png" "2160x1440" 1000
+
+  # great-wave: Hokusai woodblock print — flat colour, outlines, fine wave texture.
+  # Failure mode (default sweep uses x4plus): flat fills gain false grain; outlines fringed.
+  # Integration test explicitly uses anime_6B model for correct style preservation.
+  assert_image \
+    "great-wave (anime/illustration, flat colour and outlines) → 2400×1644" \
+    "$RESULTS/demo/great-wave-lr600_out.png" "2400x1644" 2000
+
+  # douglas-portrait: Frederick Douglass c1860s daguerreotype — historical face.
+  # Failure mode: GFPGAN fails to detect face at 198px input; or hallucinates features
+  # that contradict the original portrait expression.
+  assert_image \
+    "douglas-portrait (face enhancement / historical portrait) → 792×940" \
+    "$RESULTS/demo/douglas-portrait-lr198_out.png" "792x940" 100
+
+  # ── 4K demo set
+  # metro-landscape: dense urban buildings, fine window grids at 4K scale.
+  # Failure mode: window repetition collapses into smeared grid; facade colours drift.
+  assert_image \
+    "metro-landscape (4K cityscape / dense building detail) → 3840×2560" \
+    "$RESULTS/demo/metro-landscape-lr960_out.png" "3840x2560" 8000
+
+  # portrait-conversation: two faces, natural window light, clothing texture at 4K.
+  # Failure mode: skin over-smoothed or waxy; clothing weave lost; bokeh tiled.
+  assert_image \
+    "portrait-conversation (4K portrait / multi-face) → 3840×2560" \
+    "$RESULTS/demo/portrait-conversation-lr960_out.png" "3840x2560" 8000
+
+  # yosemite-valley: granite cliff, pine canopy, waterfall, sky at 4K width.
+  # Failure mode: tile seams visible at 3840px; canopy over-smoothed; grain injected in sky.
+  assert_image \
+    "yosemite-valley (4K landscape / granite + forest + sky) → 3840×1736" \
+    "$RESULTS/demo/yosemite-valley-lr960_out.png" "3840x1736" 5000
 fi
 
 # ─── 7. VIDEO: ARGUMENT VALIDATION ─────────────────────────────────────────────
@@ -469,14 +518,14 @@ if [ "$INTEGRATION" -eq 1 ]; then
   fi
   rm -rf "$BATCH_IN" "$BATCH_OUT"
 else
-  skip "image batch (run with --integration)"
+  skip "image batch (run with --integration-images or --integration)"
 fi
 
 # ─── 20. INTEGRATION: validate video source files ───────────────────────────────
 # Confirms that the downloaded Prelinger Archive clips are valid, correct resolution,
 # and correct duration before running any encode.
 printf '\n── Integration: video source file validation ──\n'
-if [ "$INTEGRATION" -eq 1 ]; then
+if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
   for VID_SRC in \
     "test-assets/videos/prelinger-france-1947-30s.mp4:640:480:25:35:mid-century documentary (1947 France)" \
     "test-assets/videos/sf-market-street-1906-30s.mp4:640:480:25:35:historical silent film (SF 1906)"
@@ -508,7 +557,7 @@ fi
 # test-clip.mp4 is 320×180 with audio. -q low uses CPU ffmpeg (~1 s).
 # Scenario: audio passthrough must survive the encode; dimensions must double.
 printf '\n── Integration: test-clip — synthetic smoke encode (-q low) ──\n'
-if [ "$INTEGRATION" -eq 1 ]; then
+if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
   _VID_TMPDIR=$(mktemp -d)
   _VID_OUT="$_VID_TMPDIR/clip-low-2x.mp4"
   if scripts/upscale-video.sh -q low \
@@ -546,7 +595,7 @@ fi
 # test-clip.mp4: GPU-accelerated RealCUGAN at 2x. ~2 min on a 4 GB VRAM GPU.
 # Scenario: GPU encode must produce correct dimensions and preserve duration.
 printf '\n── Integration: test-clip — GPU encode (-q medium, RealCUGAN 2×) ──\n'
-if [ "$INTEGRATION" -eq 1 ]; then
+if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
   _VID_MED_OUT=$(mktemp /tmp/test-medium-XXXXXX.mp4)
   printf '  running video2x realcugan 2× on test-clip.mp4 — ~2 min...\n'
   if scripts/upscale-video.sh -q medium \
@@ -568,7 +617,7 @@ if [ "$INTEGRATION" -eq 1 ]; then
   fi
   rm -f "$_VID_MED_OUT"
 else
-  skip "test-clip GPU medium encode — RealCUGAN 2× (~2 min; run with --integration)"
+  skip "test-clip GPU medium encode — RealCUGAN 2× (run with --integration)"
 fi
 
 # ─── 23. INTEGRATION: historical video — sf-market-street-1906 (-q low) ─────────
@@ -577,7 +626,7 @@ fi
 # grain character preserved (cannot assert this programmatically, but we confirm
 # the file is not suspiciously small — too small → blank frames or silence).
 printf '\n── Integration: sf-market-street-1906 — historical silent film (-q low) ──\n'
-if [ "$INTEGRATION" -eq 1 ]; then
+if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
   _V=$(mktemp /tmp/test-sf-XXXXXX.mp4)
   VID="test-assets/videos/sf-market-street-1906-30s.mp4"
   if [ -f "$VID" ]; then
@@ -604,12 +653,12 @@ else
   skip "sf-market-street-1906 historical film encode (run with --integration)"
 fi
 
-# ─── 24. INTEGRATION: mid-century video — prelinger-france-1947 (-q low) ────────
+# ─── 24. INTEGRATION: mid-century video — prelinger-france-1947 ─────────────────
 # 1947 home movie — lighter grain than 1906 film, some colour information.
 # Scenario: 2x upscale completes; output is 1280×960; colour encode does not
 # produce a suspiciously small file (colour information retained).
 printf '\n── Integration: prelinger-france-1947 — mid-century documentary (-q low) ──\n'
-if [ "$INTEGRATION" -eq 1 ]; then
+if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
   _V=$(mktemp /tmp/test-france-XXXXXX.mp4)
   VID="test-assets/videos/prelinger-france-1947-30s.mp4"
   if [ -f "$VID" ]; then
@@ -634,6 +683,160 @@ if [ "$INTEGRATION" -eq 1 ]; then
   rm -f "$_V"
 else
   skip "prelinger-france-1947 documentary encode (run with --integration)"
+fi
+
+# ─── 25. INTEGRATION: JPEG artifact removal (flower-foliage-q20) ────────────────
+# Same scene as flower-foliage but input was bicubic-downscaled then JPEG-compressed
+# at quality 20. RealESRGAN_x4plus was trained on JPEG-degraded inputs; this confirms
+# that code path is exercised.
+# Scenario: 8×8 DCT block boundaries must not be visible in the output; petal detail
+# must still be resolved (not over-smoothed to hide artifacts).
+printf '\n── Integration: flower-foliage-q20 — JPEG artifact removal ──\n'
+if [ "$INTEGRATION" -eq 1 ]; then
+  _T=$(mktemp -d)
+  if scripts/upscale-image.sh -s 4 \
+      test-assets/images/demo/flower-foliage-lr540-q20.jpg "$_T" 2>/dev/null; then
+    assert_image \
+      "flower-foliage-q20: 540×360 Q20 JPEG → 2160×1440 (JPEG artifact removal)" \
+      "$_T/flower-foliage-lr540-q20_out.png" "2160x1440" 1000
+    # Output must differ from the clean-bicubic run: JPEG inputs produce different
+    # (block-suppressed) output than a clean bicubic LR.
+    if cmp -s "$_T/flower-foliage-lr540-q20_out.png" \
+               "output/images/test-results/demo/flower-foliage-lr540_out.png" 2>/dev/null; then
+      fail "flower-foliage-q20: output identical to clean LR — JPEG degradation had no effect on reconstruction"
+    else
+      ok "flower-foliage-q20: output differs from clean LR run (JPEG degradation handled)"
+    fi
+  else
+    fail "flower-foliage-q20: inference exited non-zero"
+  fi
+  rm -rf "$_T"
+else
+  skip "flower-foliage JPEG artifact removal (run with --integration)"
+fi
+
+# ─── 26. INTEGRATION: anime/illustration model (great-wave) ──────────────────────
+# Hokusai's Great Wave — flat colour fills, strong outlines, chaotic wave texture.
+# Uses RealESRGAN_x4plus_anime_6B, which is trained on synthetic anime/illustration.
+# Scenario: flat sky and water fills must stay grain-free; outline edges sharp; no
+# photorealistic noise injected into the flat colour regions.
+printf '\n── Integration: great-wave — anime/illustration model (anime_6B) ──\n'
+if [ "$INTEGRATION" -eq 1 ]; then
+  _TA=$(mktemp -d)
+  _TP=$(mktemp -d)
+  if scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus_anime_6B \
+      test-assets/images/demo/great-wave-lr600.png "$_TA" 2>/dev/null; then
+    assert_image \
+      "great-wave anime_6B: 600×411 → 2400×1644 (illustration model)" \
+      "$_TA/great-wave-lr600_out.png" "2400x1644" 2000
+  else
+    fail "great-wave: RealESRGAN_x4plus_anime_6B inference exited non-zero"
+  fi
+  # Cross-model comparison: photo model on same input must produce a different result,
+  # confirming model selection matters for illustration content.
+  if scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus \
+      test-assets/images/demo/great-wave-lr600.png "$_TP" 2>/dev/null; then
+    if cmp -s "$_TA/great-wave-lr600_out.png" "$_TP/great-wave-lr600_out.png"; then
+      fail "great-wave: anime_6B and x4plus produced identical output — model selection not working"
+    else
+      ok "great-wave: anime_6B output differs from x4plus output (model selection confirmed)"
+    fi
+  fi
+  rm -rf "$_TA" "$_TP"
+else
+  skip "great-wave anime/illustration model inference (run with --integration)"
+fi
+
+# ─── 27. INTEGRATION: face enhancement (douglas-portrait) ────────────────────────
+# Frederick Douglass c1860s daguerreotype — 198×235 input, 4× upscale.
+# Scenario: -F must detect the face at 198px input width and apply GFPGAN;
+# output must differ from non-enhanced run and preserve output dimensions.
+printf '\n── Integration: douglas-portrait — historical portrait + face enhancement ──\n'
+if [ "$INTEGRATION" -eq 1 ]; then
+  _TB=$(mktemp -d); _TF=$(mktemp -d)
+  scripts/upscale-image.sh -s 4 \
+      test-assets/images/demo/douglas-portrait-lr198.png "$_TB" 2>/dev/null
+  scripts/upscale-image.sh -s 4 -F \
+      test-assets/images/demo/douglas-portrait-lr198.png "$_TF" 2>/dev/null
+  assert_image \
+    "douglas-portrait base: 198×235 → 792×940" \
+    "$_TB/douglas-portrait-lr198_out.png" "792x940" 100
+  assert_image \
+    "douglas-portrait -F: 198×235 → 792×940 (face enhance must not resize)" \
+    "$_TF/douglas-portrait-lr198_out.png" "792x940" 100
+  if cmp -s "$_TB/douglas-portrait-lr198_out.png" "$_TF/douglas-portrait-lr198_out.png"; then
+    fail "douglas-portrait -F: output identical to base — GFPGAN had no effect on historical portrait"
+  else
+    ok "douglas-portrait -F: output differs from base (GFPGAN detected face at 198px input)"
+  fi
+  rm -rf "$_TB" "$_TF"
+else
+  skip "douglas-portrait face enhancement -F (run with --integration)"
+fi
+
+# ─── 28. INTEGRATION: 4K cityscape (metro-landscape) ────────────────────────────
+# Dense urban buildings and fine window grids at 4K scale.
+# Scenario: 960×640 → 3840×2560; tiled run; window grids must stay coherent across tiles.
+printf '\n── Integration: metro-landscape — 4K cityscape ──\n'
+if [ "$INTEGRATION" -eq 1 ]; then
+  _T=$(mktemp -d)
+  if scripts/upscale-image.sh -s 4 -t 512 \
+      test-assets/images/demo/metro-landscape-lr960.png "$_T" 2>/dev/null; then
+    assert_image \
+      "metro-landscape: 960×640 → 3840×2560 (4K cityscape)" \
+      "$_T/metro-landscape-lr960_out.png" "3840x2560" 8000
+  else
+    fail "metro-landscape: inference exited non-zero"
+  fi
+  rm -rf "$_T"
+else
+  skip "metro-landscape 4K cityscape inference (run with --integration)"
+fi
+
+# ─── 29. INTEGRATION: 4K portrait (portrait-conversation) ────────────────────────
+# Two faces under natural light; base run + face-enhanced run compared.
+# Scenario: 960×640 → 3840×2560; -F must fire on both faces; output must differ from base.
+printf '\n── Integration: portrait-conversation — 4K portrait + face enhance ──\n'
+if [ "$INTEGRATION" -eq 1 ]; then
+  _TB=$(mktemp -d); _TF=$(mktemp -d)
+  scripts/upscale-image.sh -s 4 -t 512 \
+      test-assets/images/demo/portrait-conversation-lr960.png "$_TB" 2>/dev/null
+  scripts/upscale-image.sh -s 4 -F -t 512 \
+      test-assets/images/demo/portrait-conversation-lr960.png "$_TF" 2>/dev/null
+  assert_image \
+    "portrait-conversation base: 960×640 → 3840×2560" \
+    "$_TB/portrait-conversation-lr960_out.png" "3840x2560" 8000
+  assert_image \
+    "portrait-conversation -F: 3840×2560 (face enhance must not resize)" \
+    "$_TF/portrait-conversation-lr960_out.png" "3840x2560" 8000
+  if cmp -s "$_TB/portrait-conversation-lr960_out.png" \
+             "$_TF/portrait-conversation-lr960_out.png"; then
+    fail "portrait-conversation -F: output identical to base — GFPGAN had no effect"
+  else
+    ok "portrait-conversation -F: output differs from base (GFPGAN fired on 4K portrait)"
+  fi
+  rm -rf "$_TB" "$_TF"
+else
+  skip "portrait-conversation 4K portrait + face enhance (run with --integration)"
+fi
+
+# ─── 30. INTEGRATION: 4K landscape (yosemite-valley) ────────────────────────────
+# Granite cliffs, pine forest canopy, waterfall, sky — maximum multi-texture diversity.
+# Scenario: 960×434 → 3840×1736; tiled; no seams across the panoramic width.
+printf '\n── Integration: yosemite-valley — 4K landscape, multi-texture ──\n'
+if [ "$INTEGRATION" -eq 1 ]; then
+  _T=$(mktemp -d)
+  if scripts/upscale-image.sh -s 4 -t 512 \
+      test-assets/images/demo/yosemite-valley-lr960.png "$_T" 2>/dev/null; then
+    assert_image \
+      "yosemite-valley: 960×434 → 3840×1736 (4K landscape)" \
+      "$_T/yosemite-valley-lr960_out.png" "3840x1736" 5000
+  else
+    fail "yosemite-valley: inference exited non-zero"
+  fi
+  rm -rf "$_T"
+else
+  skip "yosemite-valley 4K landscape inference (run with --integration)"
 fi
 
 # ─── SUMMARY ────────────────────────────────────────────────────────────────────
