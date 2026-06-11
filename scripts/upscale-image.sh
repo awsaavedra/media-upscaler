@@ -18,10 +18,15 @@ INFERENCE_SCRIPT="$REALESRGAN_DIR/inference_realesrgan.py"
 VENV_PYTHON="$REALESRGAN_DIR/venv/bin/python"
 
 usage() {
-  printf 'Usage: %s [-s SCALE] [-m MODEL] [-f FORMAT] [-t TILE] [-F] [-j] [-n] [INPUT [OUTPUT]]\n' "$0"
+  printf 'Usage: %s [-q PRESET] [-s SCALE] [-m MODEL] [-f FORMAT] [-t TILE] [-F] [-j] [-n] [INPUT [OUTPUT]]\n' "$0"
   printf '  No args: sweeps test-assets/images/ → output/images/ (skips gt/ dirs)\n'
   printf '  INPUT   image file or directory (directories recurse, skipping gt/)\n'
   printf '  OUTPUT  output directory (default: output/images/)\n'
+  printf '  -q  quality preset: low | medium | high | ultrahigh (raw flags below override preset)\n'
+  printf '        low       2x  RealESRGAN_x2plus  no-face  tile=256  fast, ~1/4 VRAM\n'
+  printf '        medium    4x  RealESRGAN_x4plus  no-face  tile=512  default\n'
+  printf '        high      4x  RealESRGAN_x4plus  face     tile=512  portraits/archival\n'
+  printf '        ultrahigh 4x  RealESRGAN_x4plus  face     tile=0    max quality, full VRAM\n'
   printf '  -s  upscale factor integer (default: 4)\n'
   printf '  -m  model name or /abs/path/to/model.pth (default: RealESRGAN_x4plus)\n'
   printf '  -f  output format: png | jpg | webp (default: png)\n'
@@ -33,8 +38,15 @@ usage() {
   exit 0
 }
 
-while getopts ':s:m:f:t:Fbjnh' opt; do
+while getopts ':q:s:m:f:t:Fbjnh' opt; do
   case $opt in
+    q) case $OPTARG in
+         low)       SCALE=2; MODEL=RealESRGAN_x2plus; FACE_ENHANCE=0; TILE=256 ;;
+         medium)    SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=0; TILE=512 ;;
+         high)      SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=512 ;;
+         ultrahigh) SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=0   ;;
+         *) printf 'Unknown preset: %s  (low|medium|high|ultrahigh)\n' "$OPTARG" >&2; exit 1 ;;
+       esac ;;
     s) SCALE=$OPTARG ;;
     m) MODEL=$OPTARG ;;
     f) FORMAT=$OPTARG ;;

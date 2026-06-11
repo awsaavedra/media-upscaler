@@ -839,6 +839,356 @@ else
   skip "yosemite-valley 4K landscape inference (run with --integration)"
 fi
 
+# ─── 31–48. TUI MANUAL TEST PLAN ────────────────────────────────────────────────
+#
+# These tests require an interactive terminal and a real GPU.  They are intentionally
+# commented out so automated CI never blocks on them.  Run manually before every TUI
+# release.  Future automation path: pytest-textual-snapshot (headless Textual pilot).
+#
+# Preconditions for all TUI tests:
+#   • `tool tui` entry point is on PATH (or invoke as `python3 scripts/tui.py`)
+#   • input/images/, input/video/, input/audio/ populated per download-test-media.sh
+#   • output/ empty (or in a known partial state — noted per test)
+#   • NVIDIA GPU present and nvidia-smi accessible
+#
+# Pass/fail criteria: each test lists VERIFY bullets.  A test passes when every
+# bullet is true.  No partial credit.
+#
+# ── 31. PRE-RUN LAYOUT (first open, output/ empty) ──────────────────────────────
+#
+#   STEPS
+#     1. Ensure output/ is empty.
+#     2. Run: tool tui
+#
+#   VERIFY
+#     • Two-column layout visible immediately — Files pane left, right pane right.
+#     • Active Job panel shows "No active job" and "Press [s] to start".
+#     • GPU panel shows live idle stats: Util ~0 %, clock at idle frequency,
+#       VRAM showing baseline (driver reservation) not 0/0.
+#     • Log pane shows dim "waiting for job…" text.
+#     • ETA bar (second-to-last row) shows:
+#         Total ETA  ≈ <N> m   (<img count> img × ~<t> m  + ...)
+#     • Two-row key bindings footer always visible:
+#         Row 1: [↑↓] navigate  [SPACE] toggle  [a] all  [n] none  [t] invert  [r] retry failed  [f] force redo
+#         Row 2: [s] start  [p] pause/resume  [c] cancel job  [d] change dir  [q] quit
+#
+# ── 32. STARTUP DEFAULT SELECTION ───────────────────────────────────────────────
+#
+#   PRECONDITION  Run two images through upscale-image.sh first so output/ has
+#                 exactly those two outputs.  Leave the rest unprocessed.
+#
+#   STEPS
+#     1. Run: tool tui
+#
+#   VERIFY
+#     Images section:
+#       • Already-processed images show [✓]  ✓ done  <timestamp>  and are NOT
+#         included in the ETA total.
+#       • All other images show [✓]  · queued  est. ~<N> m  and ARE in ETA total.
+#       • No image starts as [ ] (unselected) unless the user manually toggled it.
+#
+#     Video section:
+#       • Alphabetically first unprocessed video shows [✓]  · queued.
+#       • Every other video shows [ ]  ○ excluded.
+#       • Only the one selected video contributes to ETA total.
+#
+#     Audio section:
+#       • All unprocessed audio files show [✓]  · queued  est. ~<N> m.
+#       • All contribute to ETA total.
+#
+# ── 33. PER-SECTION SELECT ALL / UNSELECT ALL ───────────────────────────────────
+#
+#   STEPS
+#     1. Open TUI (mixed done/queued state).
+#     2. Click [ unselect all ] under the Images header.
+#     3. Note ETA value.
+#     4. Click [ select all ] under the Images header.
+#     5. Note ETA value.
+#     6. Repeat steps 2–5 for Video section.
+#     7. Repeat steps 2–5 for Audio section.
+#
+#   VERIFY
+#     • After step 2: all images show [ ]  ○ excluded; ETA drops by image total.
+#       Video and Audio selections are UNCHANGED.
+#     • After step 4: all unprocessed images return to [✓]  · queued; ETA returns
+#       to prior value.  Done images remain ✓ done (unaffected by select all).
+#     • Video [unselect all] leaves Images and Audio unchanged, and vice versa.
+#     • Audio [unselect all] leaves Images and Video unchanged.
+#     • ETA bar updates immediately on every click — no lag, no stale value.
+#
+# ── 34. AGGREGATE ETA — TOGGLE RESPONSIVENESS ───────────────────────────────────
+#
+#   STEPS
+#     1. Open TUI.  Note displayed ETA value (call it T0).
+#     2. Navigate to a video item that is [ ] excluded.  Press SPACE to select it.
+#     3. Note new ETA value (T1).
+#     4. Press SPACE again to deselect it.
+#     5. Note ETA value (T2).
+#     6. Navigate to a ✓ done image.  Press SPACE (no-op — done items are not
+#        re-queued by SPACE; only [f] force-redoes them).
+#
+#   VERIFY
+#     • T1 = T0 + video_estimate (displayed as "est. ~<N> m" on that item's row).
+#     • T2 = T0  (returns exactly).
+#     • Step 6: ✓ done item's checkbox stays [✓]; ETA does not change.
+#     • ETA bar formula shown as breakdown e.g.:
+#         (3 img × ~2 m  +  2 vid × ~22 m  +  2 aud × ~1 m)
+#
+# ── 35. KEYBOARD NAVIGATION AND SELECTION SHORTCUTS ─────────────────────────────
+#
+#   STEPS
+#     a. ↑ / ↓  — move focus through every row in the file list including section
+#                  headers (headers are skipped / non-focusable).
+#     b. SPACE   — on a [✓] queued item → becomes [ ] excluded; ETA decreases.
+#                  on a [ ] excluded item → becomes [✓] queued; ETA increases.
+#     c. [a]     — press 'a'; all unfinished items in all sections become [✓].
+#     d. [n]     — press 'n'; all items in all sections become [ ].  ETA → 0 m.
+#     e. [t]     — with some items checked: press 't'; selection inverts.
+#                  ETA flips accordingly.
+#     f. [r]     — with at least one ✗ failed item present: press 'r';
+#                  all failed items return to · queued status.
+#     g. [f]     — navigate to a ✓ done item; press 'f'; item changes to · queued
+#                  and its estimate reappears in ETA total.
+#
+#   VERIFY (per step)
+#     a. Focus indicator moves through items; section headers are never focused.
+#     b. ETA updates immediately on every SPACE press.
+#     c. After [a]: ETA = sum of all unfinished items.
+#     d. After [n]: ETA bar shows "Total ETA  ≈ 0 m" or "(nothing selected)".
+#     e. After [t] from partial selection: previously unchecked are now checked
+#        and previously checked are now unchecked.
+#     f. After [r]: ✗ failed items show · queued; they appear in ETA total.
+#     g. After [f]: item shows [✓]  · queued  est. ~<N> m; ETA total increases.
+#
+# ── 36. START BATCH — PROGRESS BARS AND THROUGHPUT METRICS ──────────────────────
+#
+#   PRECONDITION  At least one image, one video, one audio file queued.
+#
+#   STEPS
+#     1. Press [s] to start.
+#     2. Watch the first job (image expected first).
+#     3. Wait for it to complete; observe video job start automatically.
+#     4. Wait for video job; observe audio job start.
+#
+#   VERIFY — Image job
+#     • Active Job panel title changes to the image filename.
+#     • Progress bar animates from 0 → 100 %.
+#     • Throughput shows "X.X tiles/s · tile N / total" (large image) or
+#       "X.X files/s" (small batch).
+#     • Item row in Files pane changes from "· queued" to "▶ active  <pct>%  <eta> left".
+#     • ETA bar switches to "Elapsed X m  ·  Total ETA  ≈ Y m remaining  (<N> items left)".
+#
+#   VERIFY — Video job
+#     • Throughput shows "X.XX fps".
+#     • Progress basis is frames done / total frames.
+#
+#   VERIFY — Audio job
+#     • Throughput shows "X.Xs audio / s elapsed".
+#     • Progress basis is seconds of audio processed / total duration.
+#
+#   VERIFY — all jobs
+#     • On completion each item flips to "✓ done  <timestamp>".
+#     • Completed items vanish from ETA total.
+#     • Queue drains automatically without user intervention.
+#
+# ── 37. GPU STATS PANEL DURING INFERENCE ────────────────────────────────────────
+#
+#   STEPS
+#     1. Start an image or video job (GPU-heavy).
+#     2. Watch GPU panel for ~30 s.
+#
+#   VERIFY
+#     • Util bar fills noticeably above idle (expect > 50 % during inference).
+#     • VRAM shows non-trivial usage (expect > 0.5 GB on any Real-ESRGAN run).
+#     • Temp rises from idle baseline.
+#     • Clock shows non-idle frequency.
+#     • All four metrics update on approximately a 2 s interval (not frozen).
+#
+# ── 38. LOG PANE ─────────────────────────────────────────────────────────────────
+#
+#   STEPS
+#     1. Start a job that produces verbose stderr (e.g. image with -q high).
+#     2. Watch Log pane.
+#     3. Let job run past 200 log lines (run a batch of many small images).
+#
+#   VERIFY
+#     • Log lines appear in the pane as the job runs (auto-scroll keeps latest
+#       line visible without user action).
+#     • Lines are timestamped (HH:MM:SS prefix).
+#     • Pane does NOT grow beyond its allocated height — it scrolls, not expands.
+#     • After 200 lines, oldest lines are dropped (cap enforced).
+#     • Log pane does not interfere with Files pane scrolling.
+#
+# ── 39. PAUSE AND RESUME ─────────────────────────────────────────────────────────
+#
+#   STEPS
+#     1. Start a long job (video recommended).
+#     2. While job is running, press [p].
+#     3. Wait 10 s.
+#     4. Press [p] again.
+#
+#   VERIFY
+#     • After step 2: progress bar freezes; throughput metric shows 0 or "—";
+#       elapsed timer pauses; item status shows "▶ paused".
+#     • GPU util drops toward idle during pause.
+#     • After step 4: progress resumes from exact same position; throughput
+#       metric resumes; elapsed timer continues (pause time not counted).
+#     • ETA remaining recalculates from resumed throughput.
+#
+# ── 40. CANCEL JOB ───────────────────────────────────────────────────────────────
+#
+#   STEPS
+#     1. Start a long job (video recommended).
+#     2. While job is running, press [c].
+#     3. Observe item status.
+#     4. Press [s] to attempt restart.
+#
+#   VERIFY
+#     • After step 2: active job stops; Active Job panel returns to idle state
+#       ("No active job").
+#     • Cancelled item returns to "· queued" (not ✗ failed — cancel is not failure).
+#     • Partial output file (if any) is cleaned up; no corrupt file left in output/.
+#     • Sidecar .progress.json for that file is removed.
+#     • Next queued item does NOT auto-start — user must press [s] again (step 4).
+#     • After step 4: cancelled item re-runs from the beginning.
+#
+# ── 41. COMPLETION TRACKING AND RELAUNCH ─────────────────────────────────────────
+#
+#   STEPS
+#     1. Run a full batch to completion; quit the TUI.
+#     2. Relaunch: tool tui
+#
+#   VERIFY
+#     • All items that completed show [✓]  ✓ done  <timestamp> on relaunch —
+#       detected from output/ file existence, no separate state file needed.
+#     • Done items are excluded from ETA total on relaunch.
+#     • Default selection rules re-apply: unprocessed images [✓], first unprocessed
+#       video [✓], unprocessed audio [✓]; already-done items not re-queued.
+#     • ETA bar immediately shows correct aggregate for remaining items.
+#
+# ── 42. FAILED ITEM AND RETRY ────────────────────────────────────────────────────
+#
+#   PRECONDITION  Place a corrupt or zero-byte file in input/images/ so inference
+#                 will fail on it.
+#
+#   STEPS
+#     1. Start a batch that includes the corrupt file.
+#     2. Wait for failure.
+#     3. Press [r] to retry all failed.
+#     4. Press [s] to start.
+#
+#   VERIFY
+#     • After failure: item shows [✗]  ✗ failed  <reason> (e.g. "OOM at tile 3/12"
+#       or "non-zero exit").
+#     • Batch continues with remaining items — one failure does not abort the queue.
+#     • After [r] (step 3): all ✗ failed items return to [✓]  · queued; their
+#       estimates reappear in ETA total.
+#     • After [s] (step 4): failed item is retried; other already-done items skipped.
+#
+# ── 43. FORCE REDO ───────────────────────────────────────────────────────────────
+#
+#   PRECONDITION  At least one ✓ done item in the list.
+#
+#   STEPS
+#     1. Navigate focus to a ✓ done item.
+#     2. Press [f].
+#     3. Note ETA total.
+#     4. Press [s] to start; wait for the item to reprocess.
+#
+#   VERIFY
+#     • After step 2: item changes from "✓ done <timestamp>" to "· queued  est. ~<N> m".
+#       ETA total increases by that item's estimate.
+#     • Checkbox stays [✓] (force-redo does not uncheck; it just re-queues).
+#     • After completion (step 4): item shows ✓ done with a new timestamp.
+#     • Output file in output/ is overwritten (newer mtime; different content if
+#       non-deterministic, or identical if deterministic model).
+#
+# ── 44. PRESET SELECTOR ──────────────────────────────────────────────────────────
+#
+#   STEPS
+#     1. Open TUI with several queued images.  Note per-item estimates and ETA.
+#     2. Open the Preset selector (click or navigate to [medium ▼]).
+#     3. Switch from medium → high.
+#     4. Switch from high → low.
+#
+#   VERIFY
+#     • After step 3 (medium → high): per-item estimates increase (high = 4×+face,
+#       slower than medium = 4× no face); ETA total increases.
+#     • After step 4 (high → low): per-item estimates decrease (low = 2×, fastest);
+#       ETA total decreases.
+#     • Preset change does not alter any checkbox state.
+#     • If a job is active when preset changes: active job is unaffected (preset
+#       applies to next-queued items only); active item shows its original preset.
+#
+# ── 45. CHANGE INPUT DIRECTORY [d] ───────────────────────────────────────────────
+#
+#   PRECONDITION  A second populated input directory (e.g. input2/) exists.
+#
+#   STEPS
+#     1. Open TUI with default input/.
+#     2. Press [d].
+#     3. Enter path to input2/ in the dialog.
+#     4. Confirm.
+#
+#   VERIFY
+#     • File list repopulates with contents of input2/.
+#     • Per-media default selection rules re-apply fresh (images all, video first,
+#       audio all).
+#     • ETA total recomputes for the new file set.
+#     • Header shows "Input [input2/ ▶]" (updated path).
+#     • Previous file list is fully replaced — no stale rows from input/.
+#
+# ── 46. SIDECAR REATTACH (DETACH AND RECONNECT) ──────────────────────────────────
+#
+#   STEPS
+#     1. Start a long video job.
+#     2. After ~10 s, kill the TUI process (Ctrl+C or close terminal).
+#        The upscale-video.sh subprocess continues in the background.
+#     3. Verify the .progress.json sidecar is still being updated:
+#          watch -n1 cat output/video/<file>.progress.json
+#     4. Relaunch: tool tui
+#
+#   VERIFY
+#     • On relaunch (step 4): in-progress file shows "▶ active  <current pct>%"
+#       (not "· queued" and not "✓ done").
+#     • Active Job panel populates immediately with the running job's progress.
+#     • Throughput metric resumes within 5 s of reattach.
+#     • ETA remaining reflects current measured throughput, not a cold seed.
+#     • GPU panel resumes polling.
+#     • Log pane shows recent lines from the sidecar's log buffer.
+#
+# ── 47. QUIT BEHAVIOUR ───────────────────────────────────────────────────────────
+#
+#   STEPS
+#     a. No active jobs: press [q].
+#     b. Active job running: press [q].  Then press cancel/no in the prompt.
+#        Then press [q] again and confirm quit.
+#
+#   VERIFY
+#     a. TUI exits cleanly; terminal restored to normal state; no orphan processes.
+#     b. First [q]: confirm prompt appears e.g. "Job active. Quit and leave it running? [y/n]".
+#        Pressing 'n' (or Escape): TUI remains open, job continues uninterrupted.
+#        Pressing 'y': TUI exits; background job continues; sidecar JSON keeps updating
+#        (same as detach in test 46 — job is not killed).
+#
+# ── 48. KEY BINDINGS BAR ALWAYS VISIBLE ─────────────────────────────────────────
+#
+#   STEPS
+#     1. Open TUI with a long file list (> 30 items so Files pane scrolls).
+#     2. Scroll the Files pane to the bottom using ↓.
+#     3. Scroll back to the top.
+#     4. Resize the terminal window to a narrow width (~80 cols) and short height (~24 rows).
+#
+#   VERIFY
+#     • At every scroll position: both key binding rows are visible at the bottom
+#       of the screen.  They never scroll out of view.
+#     • ETA status bar is also always visible above the key binding rows.
+#     • At narrow/short terminal (step 4): layout degrades gracefully — bindings
+#       may wrap but are not hidden; no crash or rendering corruption.
+#     • The Files pane scrolls independently of the footer rows.
+#
+# ────────────────────────────────────────────────────────────────────────────────
+
 # ─── SUMMARY ────────────────────────────────────────────────────────────────────
 printf '\n──────────────────────────────────────\n'
 printf '%d passed  %d failed  %d skipped\n' "$PASS" "$FAIL" "$SKIP"
