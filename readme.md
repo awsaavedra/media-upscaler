@@ -3,6 +3,19 @@
 ## Project
 AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 3050–3060 Ti, 32 GB RAM) — a free, private alternative to cloud/subscription upscalers for restoring old photos and footage. Primary interface is an interactive TUI; shell scripts are the processing back-end.
 
+## Roadmap
+
+| Version | Status | Theme |
+|---|---|---|
+| **v0** | ✅ shipped (`v0`) | Core scripts, `-q` presets, Rich monitor, perf estimator, GPU check, test suite |
+| **v2-prep** | ✅ shipped (`v2-prep`) | Image `-q` presets, Textual TUI skeleton, audio stub |
+| **v1** | 🟡 code complete | Chunked resume, calibration probe, integrity check, VRAM auto-tile, `-q fast`, batch dirs — pending: 854×480 benchmark + throttle warning |
+| **v2** | 🟡 in progress | Textual TUI with full CLI parity (presets, options modal, sidecar reattach, adaptive ETA) — pending: throttle warning, TensorRT, NVENC, dedup |
+| **v3** | 🔵 planned | Rust rewrite — ratatui TUI, zero-copy pipeline, same feature parity |
+| **v4** | 🔵 planned | Audio upscaling (RNNoise / DeepFilterNet / AudioSR) |
+
+Full item lists and exit criteria: [`docs/roadmap.md`](docs/roadmap.md)
+
 ## Quickstart
 1. Verify GPU: `nvidia-smi` — driver must be loaded
 2. Run setup: `./scripts/setup.sh`

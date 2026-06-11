@@ -2,7 +2,22 @@
 
 Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usability, 2. efficient image/video processing; TUI/feedback/setup fold into usability.
 
-**Status (2026-06-09): v0 verified stable (32/32 integration tests, GPU path confirmed) and tagged; v1 cleared to start.** Open risk: v1 ≤ 10 h exit bar pending the 854×480 fast-preset benchmark (first v1 task).
+## Current status (2026-06-11)
+
+| Version | Tag | Status | Blocking |
+|---|---|---|---|
+| **v0** | `v0` | ✅ shipped | — |
+| **v2-prep** | `v2-prep` | ✅ shipped | — |
+| **v1** | — | 🟡 code complete, not tagged | `-q fast` benchmark @ 854×480 not run; throttle warning TUI pending |
+| **v2** | — | 🟡 TUI in progress | throttle warning; TensorRT; NVENC; duplicate-frame skip; remaining v2 features |
+| **v3** | — | 🔵 planned | v2 must ship first |
+| **v4** | — | 🔵 planned | v3 must ship first |
+
+**v1 done as of 2026-06-11:** `-q fast` preset (`realesr-animevideov3`), chunked processing + `-r` resume, calibration probe (`-c`), post-mux integrity check, temp-disk preflight, VRAM auto-tile for images, batch video directory mode. Exit bar (`≤ 10 h` reference job on RTX 3050 Mobile) and throttle warning TUI remain before tagging `v1.0`.
+
+**v2 done as of 2026-06-11:** Textual TUI (`tui.py`) with full CLI parity — preset cycling, options modal (all script flags), sidecar reattach, adaptive ETA, GPU stats panel, log pane. Tagged `v2-prep`; TUI options modal landed one commit after that tag. Remaining v2 items listed in the v2 section below.
+
+Reference job for all targets below: **1 hour 854×480 @ 25 fps → 1920×1080** (90,000 frames), path = AI 2× → 1708×960 → lanczos 1.125× → 1080p. Integer-scale engines can't do 2.25× directly; 4×-then-downscale is ~6× the work for discarded detail.
 
 Reference job for all targets below: **1 hour 854×480 @ 25 fps → 1920×1080** (90,000 frames), path = AI 2× → 1708×960 → lanczos 1.125× → 1080p. Integer-scale engines can't do 2.25× directly; 4×-then-downscale is ~6× the work for discarded detail.
 
