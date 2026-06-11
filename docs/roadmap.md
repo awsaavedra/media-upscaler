@@ -44,6 +44,7 @@ Exit criteria: reference job completes **≤ 10 h** on RTX 3050 Mobile, survives
 
 Exit criteria: reference job **≤ 4 h** on 3050 Mobile; feature set matches the "Your Target" column of the market-gap feature matrix.
 
+- **Python Textual TUI** — replace `scripts/tui-monitor.py` (Rich) with a full [Textual](https://github.com/Textualize/textual) app: job queue panel, per-job progress bars, live GPU stats (temp/VRAM/clock/throttle flag), log pane, keyboard shortcuts to pause/cancel/reattach. **Every CLI flag and argument permutation must be reachable from the TUI** — no flag available on the command line that is absent or non-configurable in the TUI. Single entry point: `tool tui`. Acceptance: all v1 TUI data visible; every CLI option exposed; attach/detach via sidecar JSON; no Rich import remaining in TUI path.
 - **TensorRT / PyTorch FP16 backend with frame batching** — use Tensor cores instead of NCNN shader FP16; expected 2–4× on RTX 30-series. Larger lift; keep NCNN as fallback. Candidate for promotion to v1 if `-q fast` misses the exit bar (see v1).
 - **NVENC encode** — blocked inside Video2X: bundled AppImage libav fails with error -22 on `h264_nvenc` (verified 2026-06-09, with and without `--pix-fmt yuv420p`). System ffmpeg has h264/hevc/av1_nvenc, so the path is newer AppImage, or lossless intermediate + system-ffmpeg encode. Minor lever (~1.2×), hence v2.
 - **Duplicate-frame skip** — mpdecimate-style dedup before inference, reuse upscaled frame via mapping; 1.2–2× on low-motion content.
@@ -53,6 +54,18 @@ Exit criteria: reference job **≤ 4 h** on 3050 Mobile; feature set matches the
 - **Content-based model auto-select** — anime vs photographic vs text-heavy detection → model recommendation.
 - **Unified command grammar** — `tool upscale image|video|audio --input … --output …` front-end over existing scripts.
 - **Per-job audit manifest** — input/output hashes, model, tile, precision, per-stage timings, warnings. (Batch folder input itself is v1; this adds the audit trail + glob patterns outside `input/`.)
+
+## v3.0 — Rust rewrite (primary goal: speed)
+
+Exit criteria: reference job measurably faster than v2 on identical hardware; full feature parity; all integration tests pass against the Rust binary; Python scripts retired.
+
+Primary motivation is throughput — Rust eliminates Python interpreter overhead, enables zero-copy buffer passing to inference engines, and opens direct CUDA/Vulkan interop without subprocess boundaries. The Python codebase is the reference implementation for behavior; v3 is a port, not a redesign — no new features until parity is confirmed.
+
+- **ratatui TUI** — replace Textual with [ratatui](https://github.com/ratatui-org/ratatui): same panels (job queue, progress, GPU stats, log), same sidecar-JSON attach protocol, same keyboard shortcuts. **Every CLI flag and argument permutation must be reachable from the TUI** — parity with the v2 Textual TUI is the minimum bar; any flag added to the CLI must have a corresponding TUI control. Single binary entry point. Acceptance: feature-for-feature parity with the Textual TUI including full CLI surface; no Python runtime dependency.
+- **Core pipeline in Rust** — port chunked processing, resume logic, batch folder sweep, progress sidecar writer, preflight checks (disk, VRAM probe), integrity checker, and perf estimator to Rust. FFI or subprocess calls to NCNN/TensorRT stay; no rewrite of inference engines.
+- **CLI parity** — same flags and exit codes as v2 Python CLI; shell scripts that consumed v2 output work unchanged.
+- **Test suite port** — `scripts/test.sh` integration tests rewritten to invoke the Rust binary; same acceptance criteria.
+- **Dependency audit** — `Cargo.lock` committed; no yanked crates; `cargo audit` clean at ship.
 
 ## Hardware: squeeze vs buy
 
