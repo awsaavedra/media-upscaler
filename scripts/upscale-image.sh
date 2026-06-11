@@ -126,6 +126,19 @@ else
   _TOTAL=1
 fi
 
+# Sidecar path for TUI reattach (single-file mode only)
+_SIDECAR=""
+if [ "$BATCH" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  _STEM=$(basename "${INPUT%.*}")
+  _SIDECAR="$OUTPUT/${_STEM}.${FORMAT}.progress.json"
+  printf '{"status":"running","pct":0,"elapsed_s":0}\n' > "$_SIDECAR"
+fi
+
+_write_sidecar_img() {
+  [ -z "$_SIDECAR" ] && return 0
+  printf '{"status":"%s","pct":%d,"elapsed_s":%d}\n' "$1" "$2" "$SECONDS" > "$_SIDECAR"
+}
+
 # Progress bar — active when a terminal is attached; passes raw output through otherwise.
 # Parses Real-ESRGAN's "Testing N name" and "Tile K/M" lines.
 _progress_bar() {
@@ -191,12 +204,27 @@ _infer() {
     "${cmd[@]}" 2>&1 | _progress_bar "$total" || true
     _ec=${PIPESTATUS[0]}
     [ -n "$tmp" ] && rm -rf "$tmp"
-    [ "$_ec" -eq 0 ] || { printf 'Inference failed in %s (exit %d)\n' "$src" "$_ec" >&2; exit 3; }
+    [ "$_ec" -eq 0 ] \
+      || { _write_sidecar_img "failed" 0
+           printf 'Inference failed in %s (exit %d)\n' "$src" "$_ec" >&2; exit 3; }
   else
-    "${cmd[@]}" >&2
-    _ec=$?
+    # Non-TTY path (used by TUI): intercept each line to update the sidecar
+    # while passing output through to the capturing process (stdout/stderr).
+    set +e
+    "${cmd[@]}" 2>&1 | while IFS= read -r _line; do
+      printf '%s\n' "$_line" >&2
+      case $_line in
+        Testing\ [0-9]*)
+          _n=${_line#Testing }; _n=${_n%% *}; _n=$((_n + 1))
+          _write_sidecar_img "running" "$((_n * 100 / (total > 0 ? total : 1)))" ;;
+      esac
+    done
+    _ec=${PIPESTATUS[0]}
+    set -e
     [ -n "$tmp" ] && rm -rf "$tmp"
-    [ "$_ec" -eq 0 ] || { printf 'Inference failed — see output above\n' >&2; exit 3; }
+    [ "$_ec" -eq 0 ] \
+      || { _write_sidecar_img "failed" 0
+           printf 'Inference failed — see output above\n' >&2; exit 3; }
   fi
 }
 
@@ -214,6 +242,8 @@ if [ "$BATCH" -eq 1 ]; then
 else
   _infer "$INPUT" "$OUTPUT" 1
 fi
+
+_write_sidecar_img "done" 100
 
 if [ "$JSON_OUT" -eq 1 ]; then
   OUT_COUNT=$(find "$OUTPUT" -name "*.${FORMAT}" | wc -l)

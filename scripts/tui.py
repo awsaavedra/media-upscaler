@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import signal
@@ -18,8 +19,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Button, Label, ProgressBar, RichLog, Static
+from textual.widgets import Button, Input, Label, ProgressBar, RichLog, Static
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -36,6 +38,8 @@ _ETA_SEEDS: dict[str, dict[str, float]] = {
     "image": {"low": 30.0, "medium": 120.0, "high": 120.0, "ultrahigh": 300.0},
     "video": {"low": 10.0, "medium": 1320.0, "high": 5400.0, "ultrahigh": 7200.0},
 }
+
+_PRESETS = ["low", "medium", "high", "ultrahigh"]
 
 SCRIPT_IMAGE = SCRIPT_DIR / "upscale-image.sh"
 SCRIPT_VIDEO = SCRIPT_DIR / "upscale-video.sh"
@@ -111,9 +115,13 @@ def _mtime_str(p: Path) -> str:
     return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
 
 
-def scan_images(preset: str) -> list[MediaItem]:
-    src = INPUT_DIR / "images"
-    dst = OUTPUT_DIR / "images"
+def scan_images(
+    preset: str,
+    input_dir: Path = INPUT_DIR,
+    output_dir: Path = OUTPUT_DIR,
+) -> list[MediaItem]:
+    src = input_dir / "images"
+    dst = output_dir / "images"
     items: list[MediaItem] = []
     if not src.exists():
         return items
@@ -132,9 +140,13 @@ def scan_images(preset: str) -> list[MediaItem]:
     return items
 
 
-def scan_video(preset: str) -> list[MediaItem]:
-    src = INPUT_DIR / "video"
-    dst = OUTPUT_DIR / "video"
+def scan_video(
+    preset: str,
+    input_dir: Path = INPUT_DIR,
+    output_dir: Path = OUTPUT_DIR,
+) -> list[MediaItem]:
+    src = input_dir / "video"
+    dst = output_dir / "video"
     items: list[MediaItem] = []
     if not src.exists():
         return items
@@ -155,8 +167,12 @@ def scan_video(preset: str) -> list[MediaItem]:
     return items
 
 
-def scan_all(preset: str) -> list[MediaItem]:
-    return scan_images(preset) + scan_video(preset)
+def scan_all(
+    preset: str,
+    input_dir: Path = INPUT_DIR,
+    output_dir: Path = OUTPUT_DIR,
+) -> list[MediaItem]:
+    return scan_images(preset, input_dir, output_dir) + scan_video(preset, input_dir, output_dir)
 
 
 # ── ETA helpers ───────────────────────────────────────────────────────────────
@@ -417,7 +433,7 @@ KeyHintsBar {
 """
 
 _ROW1 = "[↑↓] navigate   [SPACE] toggle   [a] all   [n] none   [t] invert   [r] retry failed   [f] force redo"
-_ROW2 = "[s] start   [p] pause/resume   [c] cancel job   [d] change dir   [q] quit"
+_ROW2 = "[s] start   [p] pause/resume   [c] cancel job   [P] preset   [d] change dir   [q] quit"
 
 
 class KeyHintsBar(Static):
@@ -439,6 +455,34 @@ EtaBar {
 
 class EtaBar(Static):
     _render_markup = False  # [a] [s] in hint text are literal, not markup
+
+
+# ── Dir prompt modal ─────────────────────────────────────────────────────────
+
+class DirPrompt(ModalScreen):
+    CSS = """
+    DirPrompt { align: center middle; }
+    #dir-dialog {
+        width: 64;
+        height: auto;
+        padding: 1 2;
+        border: thick $primary;
+        background: $surface;
+    }
+    #dir-label { margin-bottom: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dir-dialog"):
+            yield Label("Enter input directory path:", id="dir-label")
+            yield Input(placeholder="/path/to/input", id="dir-input")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip() or None)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -468,23 +512,25 @@ class MediaRestoreApp(App):
     TITLE = "media-restore v2"
 
     BINDINGS = [
-        Binding("up",    "nav_up",       show=False),
-        Binding("down",  "nav_down",     show=False),
-        Binding("space", "toggle_item",  show=False),
-        Binding("a",     "select_all",   show=False),
-        Binding("n",     "select_none",  show=False),
-        Binding("t",     "invert_sel",   show=False),
-        Binding("r",     "retry_failed", show=False),
-        Binding("f",     "force_redo",   show=False),
-        Binding("s",     "start_batch",  show=False),
-        Binding("p",     "pause_resume", show=False),
-        Binding("c",     "cancel_job",   show=False),
-        Binding("q",     "request_quit", show=False),
+        Binding("up",    "nav_up",        show=False),
+        Binding("down",  "nav_down",      show=False),
+        Binding("space", "toggle_item",   show=False),
+        Binding("a",     "select_all",    show=False),
+        Binding("n",     "select_none",   show=False),
+        Binding("t",     "invert_sel",    show=False),
+        Binding("r",     "retry_failed",  show=False),
+        Binding("f",     "force_redo",    show=False),
+        Binding("s",     "start_batch",   show=False),
+        Binding("p",     "pause_resume",  show=False),
+        Binding("c",     "cancel_job",    show=False),
+        Binding("P",     "cycle_preset",  show=False),
+        Binding("q",     "request_quit",  show=False),
     ]
 
     def __init__(self, input_dir: Path = INPUT_DIR, preset: str = "medium") -> None:
         super().__init__()
         self._input_dir = input_dir
+        self._output_dir = OUTPUT_DIR
         self._preset = preset
         self._items: list[MediaItem] = []
         self._cursor: int = 0
@@ -493,6 +539,7 @@ class MediaRestoreApp(App):
         self._job_proc: asyncio.subprocess.Process | None = None
         self._paused = False
         self._gpu: dict = {}
+        self._actual_secs: dict[str, list[float]] = {}
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -516,13 +563,15 @@ class MediaRestoreApp(App):
         yield KeyHintsBar()
 
     def on_mount(self) -> None:
-        self._items = scan_all(self._preset)
+        self._items = scan_all(self._preset, self._input_dir, self._output_dir)
         self._populate_rows()
         self._refresh_cursor(0)
         self._update_ui()
         self.query_one(ActiveJobPanel).set_idle()
         self.query_one(GpuPanel).update("waiting for job…")
         self.set_interval(2.0, self._tick_gpu)
+        self.set_interval(5.0, self._tick_sidecars)
+        self._reattach_sidecars()
 
     def _populate_rows(self) -> None:
         img_list = self.query_one("#img-list", Vertical)
@@ -565,6 +614,67 @@ class MediaRestoreApp(App):
         self._gpu = poll_gpu()
         text = render_gpu_text(self._gpu)
         self.query_one(GpuPanel).update(text)
+
+    def _reattach_sidecars(self) -> None:
+        """On startup, mark items with a live progress sidecar as active."""
+        changed = False
+        for item in self._items:
+            if item.status in ("done", "active"):
+                continue
+            sidecar = Path(str(item.output_path) + ".progress.json")
+            if not sidecar.exists():
+                continue
+            try:
+                data = json.loads(sidecar.read_text())
+                if data.get("status") == "running":
+                    item.status = "active"
+                    item.pct = int(data.get("pct", 0))
+                    changed = True
+            except Exception:
+                pass
+        if changed:
+            self._update_ui()
+
+    def _tick_sidecars(self) -> None:
+        """Poll progress sidecars for items active from a previous session."""
+        if self._job_proc is not None:
+            return  # live subprocess — TUI tracks progress directly
+        changed = False
+        for item in self._items:
+            if item.status != "active":
+                continue
+            sidecar = Path(str(item.output_path) + ".progress.json")
+            if not sidecar.exists():
+                if item.output_path.exists():
+                    item.status = "done"
+                    item.done_mtime = _mtime_str(item.output_path)
+                else:
+                    item.status = "queued"
+                    item.pct = 0
+                changed = True
+                continue
+            try:
+                data = json.loads(sidecar.read_text())
+                status = data.get("status", "running")
+                if status == "done":
+                    item.status = "done"
+                    item.done_mtime = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    changed = True
+                elif status == "failed":
+                    item.status = "failed"
+                    item.error_msg = str(data.get("error", "script error"))
+                    changed = True
+                else:
+                    new_pct = int(data.get("pct", item.pct))
+                    if new_pct != item.pct:
+                        item.pct = new_pct
+                        changed = True
+                    item.throughput_str = str(data.get("throughput", item.throughput_str))
+                    item.eta_str = str(data.get("remaining", item.eta_str))
+            except Exception:
+                pass
+        if changed:
+            self._update_ui()
 
     def _update_ui(self) -> None:
         self._update_eta()
@@ -686,6 +796,7 @@ class MediaRestoreApp(App):
             return
 
         self._log(f"→ {item.path.name}  [{item.media_type}  {self._preset}]")
+        job_start = time.time()
         total_files = 1
 
         proc = await asyncio.create_subprocess_exec(
@@ -717,9 +828,21 @@ class MediaRestoreApp(App):
             self._log(f"[red]✗ {item.path.name} failed (exit {rc})[/red]")
 
         self._active_item = None
-        self.call_from_thread(self._after_job, item, remaining)
+        self.call_from_thread(self._after_job, item, remaining, job_start)
 
-    def _after_job(self, item: MediaItem, remaining: list[MediaItem]) -> None:
+    def _after_job(
+        self, item: MediaItem, remaining: list[MediaItem], job_start: float = 0.0
+    ) -> None:
+        if item.status == "done" and job_start > 0:
+            actual_s = time.time() - job_start
+            if actual_s > 0:
+                item.record_rate(1.0 / actual_s)
+                secs = self._actual_secs.setdefault(item.media_type, [])
+                secs.append(actual_s)
+                avg_s = sum(secs) / len(secs)
+                for q in remaining:
+                    if q.media_type == item.media_type and q.status == "queued":
+                        q.est_seconds = avg_s
         self._update_ui()
         self._run_next(remaining)
 
@@ -762,6 +885,7 @@ class MediaRestoreApp(App):
     def _refresh_active_panel(self, item: MediaItem) -> None:
         self.query_one(ActiveJobPanel).update_job(item)
         self._update_eta()
+        self._update_section_counts()
 
     def action_pause_resume(self) -> None:
         if self._job_proc is None:
@@ -798,15 +922,43 @@ class MediaRestoreApp(App):
 
     # ── Misc ──────────────────────────────────────────────────────────────────
 
-    def action_change_dir(self) -> None:
-        # Re-scan the current input dir (full rescan, defaults re-applied)
-        self._items = scan_all(self._preset)
-        for row in self.query(ChecklistRow):
-            row.remove()
-        self._populate_rows()
-        self._refresh_cursor(0)
+    def _update_header(self) -> None:
+        self.query_one("#header-bar", Static).update(
+            f"Preset [{self._preset} ▾]   Input [{self._input_dir} ▶]",
+        )
+
+    def action_cycle_preset(self) -> None:
+        if self._active_item is not None:
+            self._log("[yellow]Cannot change preset while a job is active[/yellow]")
+            return
+        idx = _PRESETS.index(self._preset) if self._preset in _PRESETS else 0
+        self._preset = _PRESETS[(idx + 1) % len(_PRESETS)]
+        for item in self._items:
+            if item.status == "queued":
+                item.est_seconds = _ETA_SEEDS[item.media_type].get(self._preset, 120.0)
         self._update_ui()
-        self._log(f"Re-scanned {self._input_dir}")
+        self._update_header()
+        self._log(f"Preset → {self._preset}")
+
+    def action_change_dir(self) -> None:
+        def _apply(new_path: str | None) -> None:
+            if not new_path:
+                return
+            p = Path(new_path).expanduser().resolve()
+            if not p.is_dir():
+                self._log(f"[red]Not a directory: {p}[/red]")
+                return
+            self._input_dir = p
+            self._items = scan_all(self._preset, self._input_dir, self._output_dir)
+            for row in self.query(ChecklistRow):
+                row.remove()
+            self._populate_rows()
+            self._refresh_cursor(0)
+            self._update_ui()
+            self._update_header()
+            self._log(f"Re-scanned {self._input_dir}")
+
+        self.push_screen(DirPrompt(), _apply)
 
     def _log(self, text: str) -> None:
         try:

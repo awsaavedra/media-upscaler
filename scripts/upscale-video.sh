@@ -133,6 +133,18 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
+# Sidecar for TUI reattach (AI engines only; ffmpeg_scale has its own progress)
+_SIDECAR=""
+if [ "$ENGINE" != "ffmpeg_scale" ]; then
+  _SIDECAR="${OUTPUT}.progress.json"
+  printf '{"status":"running","pct":0,"fps":"0","remaining":""}\n' > "$_SIDECAR"
+fi
+
+_write_sidecar_vid() {
+  [ -z "$_SIDECAR" ] && return 0
+  printf '%s\n' "$1" > "$_SIDECAR"
+}
+
 # Detect total frame count for video2x engines (used by tui-monitor.py).
 # ffmpeg_scale uses ffmpeg's native progress display, so skip this for that engine.
 if [ "$ENGINE" != "ffmpeg_scale" ]; then
@@ -188,10 +200,32 @@ elif [ -t 1 ] || [ -t 2 ]; then
     "${CMD[@]}" 2>&1 | _progress_bar || true
     _ec=${PIPESTATUS[0]}
   fi
-  [ "$_ec" -eq 0 ] || { printf 'video2x failed (exit %d)\n' "$_ec" >&2; exit "$_ec"; }
+  [ "$_ec" -eq 0 ] \
+    || { _write_sidecar_vid '{"status":"failed"}'; printf 'video2x failed (exit %d)\n' "$_ec" >&2; exit "$_ec"; }
 else
-  "${CMD[@]}"
+  # Non-TTY path (used by TUI): pass output through while updating sidecar.
+  set +e
+  "${CMD[@]}" 2>&1 | while IFS= read -r _line; do
+    printf '%s\n' "$_line" >&2
+    _clean=$(printf '%s' "$_line" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g; s/\r//g')
+    case $_clean in
+      *frame=[0-9]*/[0-9]*)
+        _cur=$(printf '%s' "$_clean" | grep -oE 'frame=[0-9]+' | grep -oE '[0-9]+' | head -1)
+        _tot=$(printf '%s' "$_clean" | grep -oE '/[0-9]+' | head -1 | tr -dc '0-9')
+        _fps=$(printf '%s' "$_clean" | grep -oE 'fps=[0-9.]+' | cut -d= -f2)
+        _rem=$(printf '%s' "$_clean" | grep -oE 'remaining=[^ ;]+' | cut -d= -f2)
+        [ -n "$_tot" ] && [ "$_tot" -gt 0 ] && _pct=$((_cur * 100 / _tot)) || _pct=0
+        printf '{"status":"running","pct":%d,"fps":"%s","remaining":"%s"}\n' \
+          "$_pct" "${_fps:-0}" "${_rem:-}" > "$_SIDECAR" ;;
+    esac
+  done
+  _ec=${PIPESTATUS[0]}
+  set -e
+  [ "$_ec" -eq 0 ] \
+    || { _write_sidecar_vid '{"status":"failed"}'; printf 'video2x failed (exit %d)\n' "$_ec" >&2; exit "$_ec"; }
 fi
+
+_write_sidecar_vid '{"status":"done","pct":100}'
 
 if [ "$JSON_OUT" -eq 1 ]; then
   printf '{"input":"%s","output":"%s","quality":"%s","engine":"%s","scale":%s}\n' \
