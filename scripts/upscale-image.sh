@@ -18,13 +18,15 @@ INFERENCE_SCRIPT="$REALESRGAN_DIR/inference_realesrgan.py"
 VENV_PYTHON="$REALESRGAN_DIR/venv/bin/python"
 
 usage() {
-  printf 'Usage: %s [-s SCALE] [-m MODEL] [-f FORMAT] [-t TILE] [-F] [-b] [-j] [-n] INPUT OUTPUT\n' "$0"
+  printf 'Usage: %s [-s SCALE] [-m MODEL] [-f FORMAT] [-t TILE] [-F] [-j] [-n] [INPUT [OUTPUT]]\n' "$0"
+  printf '  No args: sweeps test-assets/images/ → output/images/ (skips gt/ dirs)\n'
+  printf '  INPUT   image file or directory (directories recurse, skipping gt/)\n'
+  printf '  OUTPUT  output directory (default: output/images/)\n'
   printf '  -s  upscale factor integer (default: 4)\n'
   printf '  -m  model name or /abs/path/to/model.pth (default: RealESRGAN_x4plus)\n'
   printf '  -f  output format: png | jpg | webp (default: png)\n'
   printf '  -t  tile size for VRAM management, 0=auto (default: 512)\n'
   printf '  -F  enable face enhancement via GFPGAN (opt-in)\n'
-  printf '  -b  batch mode: INPUT is a directory of images\n'
   printf '  -j  print json summary to stdout on completion\n'
   printf '  -n  dry run: print command, do not execute\n'
   printf '  -h  help\n'
@@ -48,8 +50,8 @@ while getopts ':s:m:f:t:Fbjnh' opt; do
 done
 shift $((OPTIND - 1))
 
-INPUT=${1:?'INPUT required — path to image or directory (use -b for directory)'}
-OUTPUT=${2:?'OUTPUT required — path to output directory'}
+INPUT=${1:-"$PROJECT_ROOT/test-assets/images"}
+OUTPUT=${2:-"$PROJECT_ROOT/output/images"}
 
 # Validate scale
 case $SCALE in
@@ -83,13 +85,13 @@ if printf '%s' "$MODEL" | grep -q '/'; then
     || { printf 'Model file not found: %s\n' "$MODEL" >&2; exit 2; }
 fi
 
-# Validate input
-if [ "$BATCH" -eq 1 ]; then
-  [ -d "$INPUT" ] \
-    || { printf 'Batch mode: INPUT must be a directory, got: %s\n' "$INPUT" >&2; exit 2; }
+# Validate input — auto-detect batch from INPUT type; -b is now a no-op kept for compat
+if [ -d "$INPUT" ]; then
+  BATCH=1
+elif [ -f "$INPUT" ]; then
+  BATCH=0
 else
-  [ -f "$INPUT" ] \
-    || { printf 'INPUT not found: %s\n' "$INPUT" >&2; exit 2; }
+  printf 'INPUT not found: %s\n' "$INPUT" >&2; exit 2
 fi
 
 # Validate output directory is writable (create if needed)
@@ -104,10 +106,10 @@ if [ "$FREE_KB" -lt 10485760 ]; then
   printf 'WARNING: < 10 GB free in %s\n' "$OUTPUT" >&2
 fi
 
-# Count items for progress tracking (batch: file count; single: 1)
+# Count items for progress tracking; directory: recursive excluding gt/ paths
 if [ "$BATCH" -eq 1 ]; then
-  _TOTAL=$(find "$INPUT" -maxdepth 1 \( -name '*.jpg' -o -name '*.jpeg' \
-    -o -name '*.png' -o -name '*.webp' \) | wc -l)
+  _TOTAL=$(find "$INPUT" ! -path '*/gt/*' ! -path '*/gt' \
+    \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' -o -name '*.webp' \) | wc -l)
 else
   _TOTAL=1
 fi
@@ -149,37 +151,60 @@ _progress_bar() {
   printf '\n' >"$tty"
 }
 
-# Build command
-CMD=("$VENV_PYTHON" "$INFERENCE_SCRIPT"
-  -n "$MODEL"
-  -i "$INPUT"
-  -o "$OUTPUT"
-  --outscale "$SCALE"
-  --tile "$TILE"
-  --ext "$FORMAT"
-)
+# Run inference for one source (file or directory) → output directory.
+# When src is a directory, symlinks only image files into a temp dir so
+# Real-ESRGAN doesn't choke on subdirectory entries in mixed dirs.
+_infer() {
+  local src="$1" dst="$2" total="$3" actual_src tmp=""
+  if [ -d "$src" ]; then
+    tmp=$(mktemp -d)
+    find "$src" -maxdepth 1 \( -name '*.jpg' -o -name '*.jpeg' \
+      -o -name '*.png' -o -name '*.webp' \) -exec ln -s {} "$tmp/" \;
+    actual_src="$tmp"
+  else
+    actual_src="$src"
+  fi
+  local cmd=("$VENV_PYTHON" "$INFERENCE_SCRIPT"
+    -n "$MODEL" -i "$actual_src" -o "$dst"
+    --outscale "$SCALE" --tile "$TILE" --ext "$FORMAT"
+  )
+  [ "$FACE_ENHANCE" -eq 1 ] && cmd+=(--face_enhance)
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '%s\n' "${cmd[*]}"
+    [ -n "$tmp" ] && rm -rf "$tmp"
+    return
+  fi
+  mkdir -p "$dst"
+  if [ -t 1 ] || [ -t 2 ]; then
+    "${cmd[@]}" 2>&1 | _progress_bar "$total" || true
+    _ec=${PIPESTATUS[0]}
+    [ -n "$tmp" ] && rm -rf "$tmp"
+    [ "$_ec" -eq 0 ] || { printf 'Inference failed in %s (exit %d)\n' "$src" "$_ec" >&2; exit 3; }
+  else
+    "${cmd[@]}" >&2
+    _ec=$?
+    [ -n "$tmp" ] && rm -rf "$tmp"
+    [ "$_ec" -eq 0 ] || { printf 'Inference failed — see output above\n' >&2; exit 3; }
+  fi
+}
 
-if [ "$FACE_ENHANCE" -eq 1 ]; then
-  CMD+=(--face_enhance)
-fi
-
-if [ "$DRY_RUN" -eq 1 ]; then
-  printf '%s\n' "${CMD[*]}"
-  exit 0
-fi
-
-if [ -t 1 ] || [ -t 2 ]; then
-  # Interactive: pipe everything through progress bar on /dev/tty
-  "${CMD[@]}" 2>&1 | _progress_bar "$_TOTAL" || true
-  _ec=${PIPESTATUS[0]}
-  [ "$_ec" -eq 0 ] || { printf 'Inference failed (exit %d)\n' "$_ec" >&2; exit 3; }
+if [ "$BATCH" -eq 1 ]; then
+  # Recursive walk: find all subdirs with images, skip gt/ paths, mirror structure under OUTPUT
+  while IFS= read -r dir; do
+    imgs=$(find "$dir" -maxdepth 1 \
+      \( -name '*.jpg' -o -name '*.jpeg' -o -name '*.png' -o -name '*.webp' \) | wc -l)
+    [ "$imgs" -eq 0 ] && continue
+    rel="${dir#$INPUT}"; rel="${rel#/}"
+    out_dir="$OUTPUT${rel:+/$rel}"
+    printf '→ %s  (%d images)\n' "$dir" "$imgs" >&2
+    _infer "$dir" "$out_dir" "$imgs"
+  done < <(find "$INPUT" -type d ! -path '*/gt' ! -path '*/gt/*' | sort)
 else
-  # Non-interactive: inference logs to stderr; stdout reserved for -j JSON
-  "${CMD[@]}" >&2 || { printf 'Inference failed — see output above\n' >&2; exit 3; }
+  _infer "$INPUT" "$OUTPUT" 1
 fi
 
 if [ "$JSON_OUT" -eq 1 ]; then
-  OUT_COUNT=$(find "$OUTPUT" -maxdepth 1 -name "*.${FORMAT}" | wc -l)
+  OUT_COUNT=$(find "$OUTPUT" -name "*.${FORMAT}" | wc -l)
   printf '{"input":"%s","output":"%s","model":"%s","scale":%s,"format":"%s","files_written":%s}\n' \
     "$INPUT" "$OUTPUT" "$MODEL" "$SCALE" "$FORMAT" "$OUT_COUNT"
 fi
