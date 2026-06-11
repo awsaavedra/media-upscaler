@@ -9,7 +9,7 @@ AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 30
 |---|---|---|
 | **v0** | ✅ shipped (`v0`) | Core scripts, `-q` presets, Rich monitor, perf estimator, GPU check, test suite |
 | **v2-prep** | ✅ shipped (`v2-prep`) | Image `-q` presets, Textual TUI skeleton, audio stub |
-| **v1** | 🟡 code complete | Chunked resume, calibration probe, integrity check, VRAM auto-tile, `-q fast`, batch dirs — pending: 854×480 benchmark + throttle warning |
+| **v1** | ✅ shipped (`v1.0`) | Chunked resume, calibration probe, integrity check, VRAM auto-tile, `-q fast`, batch dirs |
 | **v2** | 🟡 in progress | Textual TUI with full CLI parity (presets, options modal, sidecar reattach, adaptive ETA) — pending: throttle warning, TensorRT, NVENC, dedup |
 | **v3** | 🔵 planned | Rust rewrite — ratatui TUI, zero-copy pipeline, same feature parity |
 | **v4** | 🔵 planned | Audio upscaling (RNNoise / DeepFilterNet / AudioSR) |

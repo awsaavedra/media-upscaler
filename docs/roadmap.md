@@ -8,7 +8,7 @@ Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usabil
 |---|---|---|---|
 | **v0** | `v0` | ✅ shipped | — |
 | **v2-prep** | `v2-prep` | ✅ shipped | — |
-| **v1** | — | 🟡 code complete, not tagged | `-q fast` benchmark @ 854×480 not run; throttle warning TUI pending |
+| **v1** | `v1.0` | ✅ shipped | — |
 | **v2** | — | 🟡 TUI in progress | throttle warning; TensorRT; NVENC; duplicate-frame skip; remaining v2 features |
 | **v3** | — | 🔵 planned | v2 must ship first |
 | **v4** | — | 🔵 planned | v3 must ship first |
