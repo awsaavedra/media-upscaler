@@ -232,6 +232,31 @@ AudioSR is the only OSS option for true audio super-resolution; the tier design 
 
 ---
 
+## Open research question: model quality gap vs. Topaz
+
+**Question:** Does this project reach Topaz Video AI / Topaz Photo AI output quality by v3–v4, given equivalent hardware?
+
+**Current assessment (2026-06-11):** Pipeline parity is achievable — TensorRT (v2) + Rust zero-copy pipeline (v3) close the throughput gap. The remaining variable is model weights, not architecture.
+
+**Why the gap may already be closed:** Perplexity research confirms open-source model quality is near-feature-parity with Topaz for common cases. Candidate models to evaluate:
+
+- `realesr-animevideov3` / `RealESRGAN_x4plus` — current defaults; strong on clean sources
+- `ESRGAN` successors (HAT, SwinIR, DAT) — transformer-based, outperform ESRGAN on benchmarks (PSNR/SSIM) for photographic content
+- `RealHAT`, `RealDAT` — Real-world degradation variants of the above; closer to Topaz's training regime
+- `BSRGAN` / `LDL` — specifically trained on heavily compressed / mixed-degradation inputs (archival footage use case)
+- `Restormer` — state-of-art for image restoration (denoising, deblur) as a pre-pass before upscaling
+
+**Known gap cases** (where Topaz still leads as of 2026):
+- Heavily compressed archival footage (VHS, DVD rips with blocking + noise)
+- Fine text rendering at high scale factors
+- Synthetic/CG content with sharp edges (aliasing artifacts)
+
+**Action item (v2 or post-v2):** Add a `-m auto` model-selection mode that runs a content classifier (anime vs. photographic vs. archival/compressed) and routes to the best available open model. Candidate classifiers: CLIP zero-shot, or a lightweight CNN trained on the task. This is the single highest-leverage remaining item for closing the quality gap without proprietary training data.
+
+**Research references to check:** `chainner`/`openmodeldb.info` community model releases; NTIRE and AIM workshop proceedings (annual CVPR/ECCV); `xinntao/Real-ESRGAN` issues tracker for model comparisons.
+
+---
+
 ## Hardware: squeeze vs buy
 
 Software first — v1+v2 levers stack to roughly **5–10×** on owned hardware before any purchase. Buy only when the job class changes:
