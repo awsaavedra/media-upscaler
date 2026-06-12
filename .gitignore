@@ -48,6 +48,7 @@ test-assets/images/demo/*
 !test-assets/images/demo/flower-foliage-lr540-q20.jpg
 !test-assets/images/demo/douglas-portrait-lr198.png
 !test-assets/images/demo/nypl-1908-scan-lr480.png
+!test-assets/images/demo/portrait-conversation-lr960.png
 !test-assets/images/demo/gt/
 test-assets/images/demo/gt/*
 !test-assets/images/demo/gt/budapest-parliament.jpg
@@ -55,6 +56,7 @@ test-assets/images/demo/gt/*
 !test-assets/images/demo/gt/flower-foliage.jpg
 !test-assets/images/demo/gt/douglas-portrait.jpg
 !test-assets/images/demo/gt/nypl-1908-scan.jpg
+!test-assets/images/demo/gt/portrait-conversation.jpg
 test-assets/videos/*
 !test-assets/videos/test-clip.mp4
 
