@@ -35,6 +35,9 @@ declare -a ASSETS=(
   "$IMG_DIR/demo/gt/nyc-night.jpg|https://upload.wikimedia.org/wikipedia/commons/2/22/New_York_City_at_night_HDR.jpg|New York City at night 3024×1998, point-light sources, dark shadow regions|CC BY-SA"
   "$IMG_DIR/demo/gt/great-wave.jpg|https://upload.wikimedia.org/wikipedia/commons/0/0d/Great_Wave_off_Kanagawa2.jpg|Hokusai Great Wave 8242×5640, woodblock print, flat fills and strong outlines|Public domain (pre-1828)"
   "$IMG_DIR/demo/gt/douglas-portrait.jpg|https://upload.wikimedia.org/wikipedia/commons/8/85/Frederick_Douglass_c1860s.jpg|Frederick Douglass c1860s daguerreotype 791×938, historical portrait|Public domain"
+  "$IMG_DIR/demo/gt/budapest-parliament.jpg|https://upload.wikimedia.org/wikipedia/commons/f/f2/Budapest_Parlament_Building.jpg|Budapest Parliament building 3387×2185, architecture/urban, dense stone detail|CC BY-SA"
+  "$IMG_DIR/demo/gt/nypl-1908-scan.jpg|https://upload.wikimedia.org/wikipedia/commons/7/74/New_York_Public_Library_1908.jpg|NYPL 1908 archival scan 5814×3800, grayscale document, film grain and halftone|Public domain"
+  "$IMG_DIR/demo/gt/76-ball-sign.jpg|https://upload.wikimedia.org/wikipedia/commons/a/a1/76_ball_sign_with_signs_and_light.jpg|Union 76 ball sign 1200×1800, bold text on curved surface|CC BY-SA"
   # 4K demo set — Unsplash photos via Wikimedia Commons (CC0)
   "$IMG_DIR/demo/gt/metro-landscape.jpg|https://upload.wikimedia.org/wikipedia/commons/c/cb/Metropolitan_landscape_%28Unsplash%29.jpg|Metropolitan cityscape 5472×3648, dense urban buildings and window grids|CC0"
   "$IMG_DIR/demo/gt/portrait-conversation.jpg|https://upload.wikimedia.org/wikipedia/commons/6/6e/Young_people_in_conversation_%28Unsplash%29.jpg|Natural-light portrait two faces 5760×3840, clothing texture, bokeh background|CC0"
@@ -102,6 +105,9 @@ declare -a LR_PAIRS=(
   "$IMG_DIR/demo/flower-foliage-lr540.png|$IMG_DIR/demo/gt/flower-foliage.jpg|540x360"
   "$IMG_DIR/demo/nyc-night-lr756.png|$IMG_DIR/demo/gt/nyc-night.jpg|756x500"
   "$IMG_DIR/demo/great-wave-lr600.png|$IMG_DIR/demo/gt/great-wave.jpg|600x"
+  "$IMG_DIR/demo/budapest-parliament-lr480.png|$IMG_DIR/demo/gt/budapest-parliament.jpg|480x"
+  "$IMG_DIR/demo/nypl-1908-scan-lr480.png|$IMG_DIR/demo/gt/nypl-1908-scan.jpg|480x"
+  "$IMG_DIR/demo/76-ball-sign-lr320.png|$IMG_DIR/demo/gt/76-ball-sign.jpg|320x"
   # 4K demo set LRs — 960px wide, 4× bicubic; output ≥3840px wide
   "$IMG_DIR/demo/metro-landscape-lr960.png|$IMG_DIR/demo/gt/metro-landscape.jpg|960x"
   "$IMG_DIR/demo/portrait-conversation-lr960.png|$IMG_DIR/demo/gt/portrait-conversation.jpg|960x"

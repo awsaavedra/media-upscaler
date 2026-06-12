@@ -112,6 +112,7 @@ All three scripts write `{output}.progress.json` sidecar (same protocol as v1 vi
 
 ### Remaining v2 features
 
+- **Test-asset cleanup: zero committed binaries** — remove all committed images/videos from `test-assets/`; rely entirely on `scripts/download-test-media.sh` to reproduce assets on a fresh machine. Target: committed `test-assets/` ≤ 0 bytes (gitkeep files only); download script is the single source of truth. Currently 14.7 MB committed; 15 MB is the interim ceiling.
 - **TensorRT / PyTorch FP16 backend with frame batching** — use Tensor cores instead of NCNN shader FP16; expected 2–4× on RTX 30-series. Larger lift; keep NCNN as fallback. Candidate for promotion to v1 if `-q fast` misses the exit bar (see v1).
 - **NVENC encode** — blocked inside Video2X: bundled AppImage libav fails with error -22 on `h264_nvenc` (verified 2026-06-09, with and without `--pix-fmt yuv420p`). System ffmpeg has h264/hevc/av1_nvenc, so the path is newer AppImage, or lossless intermediate + system-ffmpeg encode. Minor lever (~1.2×), hence v2.
 - **Duplicate-frame skip** — mpdecimate-style dedup before inference, reuse upscaled frame via mapping; 1.2–2× on low-motion content.
