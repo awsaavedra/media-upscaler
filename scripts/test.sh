@@ -13,8 +13,9 @@
 #   Assets: butterfly 2x, baby 4x, face-enhance -F (baby), bsd_45096, 76-ball-sign,
 #   budapest-parliament, flower-foliage (clean), nyc-night (tiled), nypl-1908-scan,
 #   image batch, flower-foliage-q20 (JPEG artifact), great-wave (anime_6B), douglas-portrait (-F).
-# Video integration (sections 20–24): video source validation + encodes.
-#   test-clip low+medium, sf-1906, france-1947.
+# Video integration (sections 20–24b): video source validation + encodes.
+#   test-clip low+medium (synthetic), sf-1906 + france-1947 low (ffmpeg),
+#   france-1947 + sf-1906 5 s GPU (-q medium) on real film grain and scratches.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -770,6 +771,112 @@ if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
   rm -f "$_V"
 else
   skip "prelinger-france-1947 documentary encode (run with --integration)"
+fi
+
+# ─── 24a. INTEGRATION: real film grain — prelinger-1947 GPU (-q medium, 5 s) ───
+# THE critical video gap: RealCUGAN on 640×480 organic film grain, not synthetic bars.
+# 5 s trim keeps runtime ≤ 5 min on a 4 GB VRAM GPU (~120 frames at 24 fps).
+# Failure modes caught: blank/frozen frames (size < 500 KB), wrong scale,
+# frame-count collapse (< 90 = decoder sync lost during chunked encode).
+printf '\n── Integration: prelinger-1947 — real film grain, GPU (-q medium, 5 s) ──\n'
+if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
+  VID="test-assets/videos/prelinger-france-1947-30s.mp4"
+  if [ -f "$VID" ]; then
+    _CLIP=$(mktemp /tmp/prelinger-5s-XXXXXX.mp4)
+    _OUT=$(mktemp /tmp/prelinger-5s-out-XXXXXX.mp4)
+    # Re-encode trim to clean H.264 keyframes; -an: source is video-only
+    ffmpeg -y -t 5 -i "$VID" -c:v libx264 -crf 18 -preset ultrafast -an \
+      "$_CLIP" -loglevel error
+    if scripts/upscale-video.sh -q medium "$_CLIP" "$_OUT" 2>/dev/null; then
+      OW=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+            -of csv=p=0 "$_OUT" 2>/dev/null)
+      OH=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+            -of csv=p=0 "$_OUT" 2>/dev/null)
+      OD=$(ffprobe -v error -show_entries format=duration \
+            -of csv=p=0 "$_OUT" 2>/dev/null | cut -d. -f1)
+      KB=$(du -k "$_OUT" | cut -f1)
+      [ "${OW:-0}" -eq 1280 ] && [ "${OH:-0}" -eq 960 ] \
+        && ok "prelinger -q medium: 640×480 → 1280×960 (2× confirmed)" \
+        || fail "prelinger -q medium: expected 1280×960, got ${OW}×${OH}"
+      [ "${OD:-0}" -ge 3 ] && [ "${OD:-0}" -le 6 ] \
+        && ok "prelinger -q medium: duration ${OD}s (3–6 s range)" \
+        || fail "prelinger -q medium: duration ${OD}s outside 3–6 s"
+      [ "${KB:-0}" -ge 500 ] \
+        && ok "prelinger -q medium: ${KB}KB (≥500 KB — real content, not blank)" \
+        || fail "prelinger -q medium: ${KB}KB — suspiciously small (blank or frozen frames?)"
+      # Frame count: 5 s × 24 fps ≈ 120; allow 90–140 for container rounding
+      OF=$(ffprobe -v error -select_streams v:0 -count_packets \
+            -show_entries stream=nb_read_packets -of csv=p=0 "$_OUT" 2>/dev/null)
+      [ "${OF:-0}" -ge 90 ] && [ "${OF:-0}" -le 140 ] \
+        && ok "prelinger -q medium: ${OF} frames (expected ~120, no decoder sync loss)" \
+        || fail "prelinger -q medium: ${OF} frames — expected 90–140"
+      # Audit manifest
+      _AUD="${_OUT}.audit.json"
+      [ -f "$_AUD" ] && python3 -c "
+import json
+d = json.load(open('$_AUD'))
+assert d.get('version') == 1 and d.get('media_type') == 'video'
+assert 'input_sha256' in d and 'output_sha256' in d
+assert d.get('elapsed_s', 0) > 0
+" 2>/dev/null \
+        && ok "prelinger -q medium: audit manifest valid" \
+        || fail "prelinger -q medium: audit manifest missing or invalid"
+    else
+      fail "prelinger -q medium: video2x exited non-zero"
+    fi
+    rm -f "$_CLIP" "$_OUT" "${_OUT}.audit.json"
+  else
+    fail "prelinger-france-1947-30s.mp4 missing — run: scripts/download-test-media.sh"
+  fi
+else
+  skip "prelinger real film grain GPU encode (run with --integration)"
+fi
+
+# ─── 24b. INTEGRATION: silent film scratches — sf-1906 GPU (-q medium, 5 s) ────
+# 1906 silent film: heavy grain, vertical scratches, camera shake — harshest test.
+# If RealCUGAN over-sharpens scratches the frame content blows up unpredictably;
+# blank-frame collapse shows in file size; lost sync shows in frame count.
+# 25 fps source → ~125 frames for 5 s.
+printf '\n── Integration: sf-1906 — silent film scratches, GPU (-q medium, 5 s) ──\n'
+if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
+  VID="test-assets/videos/sf-market-street-1906-30s.mp4"
+  if [ -f "$VID" ]; then
+    _CLIP=$(mktemp /tmp/sf-5s-XXXXXX.mp4)
+    _OUT=$(mktemp /tmp/sf-5s-out-XXXXXX.mp4)
+    ffmpeg -y -t 5 -i "$VID" -c:v libx264 -crf 18 -preset ultrafast -an \
+      "$_CLIP" -loglevel error
+    if scripts/upscale-video.sh -q medium "$_CLIP" "$_OUT" 2>/dev/null; then
+      OW=$(ffprobe -v error -select_streams v:0 -show_entries stream=width \
+            -of csv=p=0 "$_OUT" 2>/dev/null)
+      OH=$(ffprobe -v error -select_streams v:0 -show_entries stream=height \
+            -of csv=p=0 "$_OUT" 2>/dev/null)
+      OD=$(ffprobe -v error -show_entries format=duration \
+            -of csv=p=0 "$_OUT" 2>/dev/null | cut -d. -f1)
+      KB=$(du -k "$_OUT" | cut -f1)
+      OF=$(ffprobe -v error -select_streams v:0 -count_packets \
+            -show_entries stream=nb_read_packets -of csv=p=0 "$_OUT" 2>/dev/null)
+      [ "${OW:-0}" -eq 1280 ] && [ "${OH:-0}" -eq 960 ] \
+        && ok "sf-1906 -q medium: 640×480 → 1280×960 (2× confirmed)" \
+        || fail "sf-1906 -q medium: expected 1280×960, got ${OW}×${OH}"
+      [ "${OD:-0}" -ge 3 ] && [ "${OD:-0}" -le 6 ] \
+        && ok "sf-1906 -q medium: duration ${OD}s (3–6 s range)" \
+        || fail "sf-1906 -q medium: duration ${OD}s outside 3–6 s"
+      [ "${KB:-0}" -ge 500 ] \
+        && ok "sf-1906 -q medium: ${KB}KB (≥500 KB — not blank frames)" \
+        || fail "sf-1906 -q medium: ${KB}KB — suspiciously small"
+      # 25 fps source → 90–145 frame window
+      [ "${OF:-0}" -ge 90 ] && [ "${OF:-0}" -le 145 ] \
+        && ok "sf-1906 -q medium: ${OF} frames (expected ~125, no decoder sync loss)" \
+        || fail "sf-1906 -q medium: ${OF} frames — expected 90–145"
+    else
+      fail "sf-1906 -q medium: video2x exited non-zero"
+    fi
+    rm -f "$_CLIP" "$_OUT" "${_OUT}.audit.json"
+  else
+    fail "sf-market-street-1906-30s.mp4 missing — run: scripts/download-test-media.sh"
+  fi
+else
+  skip "sf-1906 silent film GPU encode (run with --integration)"
 fi
 
 # ─── 25. INTEGRATION: JPEG artifact removal (flower-foliage-q20) ────────────────
