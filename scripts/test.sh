@@ -172,11 +172,11 @@ else
     "baby (face / smooth gradient, 4x benchmark) → 512×512" \
     "$RESULTS/baby_out.png" "512x512" 200
 
-  # bsd_45096: natural organic texture — starfish on rock.
-  # Failure mode: over-smoothing turns irregular stone/starfish surface into mud.
+  # bsd_45096: natural organic texture — BSD100 img_017 (120×80 LR).
+  # Failure mode: over-smoothing turns irregular surface into mud.
   assert_image \
-    "bsd_45096 (natural organic texture, BSD100) → 512×340" \
-    "$RESULTS/bsd_45096_out.png" "512x340" 100
+    "bsd_45096 (natural organic texture, BSD100) → 480×320" \
+    "$RESULTS/bsd_45096_out.png" "480x320" 100
 
   # ── Demo set (real-world / restoration)
   # 76-ball-sign: text and hard-edge signage.
@@ -460,16 +460,16 @@ else
   skip "face enhancement -F test (run with --integration)"
 fi
 
-# ─── 13. INTEGRATION: natural texture (bsd_45096 — starfish) ────────────────────
-# bsd_45096 is an irregular organic surface (starfish + rock).
-# Scenario: upscale must not over-smooth; output ~512×340 at 4x.
+# ─── 13. INTEGRATION: natural texture (bsd_45096 — organic landscape) ───────────
+# bsd_45096 is BSD100 img_017 (120×80 LR): natural organic landscape texture.
+# Scenario: upscale must not over-smooth; output 480×320 at 4x.
 printf '\n── Integration: bsd_45096 — natural organic texture ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
   _T=$(mktemp -d)
   if scripts/upscale-image.sh -s 4 test-assets/images/bsd_45096.png "$_T" 2>/dev/null; then
     assert_image \
-      "bsd_45096: 128×85 → 512×340 (natural organic texture)" \
-      "$_T/bsd_45096_out.png" "512x340" 100
+      "bsd_45096: 120×80 → 480×320 (natural organic texture)" \
+      "$_T/bsd_45096_out.png" "480x320" 100
   else
     fail "bsd_45096: inference exited non-zero"
   fi
@@ -598,8 +598,8 @@ if [ "$INTEGRATION" -eq 1 ]; then
       "image batch: baby output 512×512" \
       "$BATCH_OUT/baby_out.png" "512x512" 200
     assert_image \
-      "image batch: bsd_45096 output 512×340" \
-      "$BATCH_OUT/bsd_45096_out.png" "512x340" 100
+      "image batch: bsd_45096 output 480×320" \
+      "$BATCH_OUT/bsd_45096_out.png" "480x320" 100
   else
     fail "image batch: inference exited non-zero"
   fi

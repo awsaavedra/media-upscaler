@@ -175,36 +175,37 @@ else
     || { printf '[ERR]  convert failed for %s\n' "$(basename "$JPEG_LR")" >&2; exit 1; }
 fi
 
-# ── Benchmark synthetic images ─────────────────────────────────────────────────
-# Set5/BSD100-style benchmark images at standard LR dimensions (128×128, 128×85).
-# Synthetic gradients: content doesn't matter for automated tests — only dimensions
-# and minimum file size are checked. Use ImageMagick to generate reproducibly.
-[ "$CHECK_ONLY" -eq 0 ] && printf '\n── Generating benchmark images ──\n'
-command -v convert >/dev/null 2>&1 \
-  || { printf '[ERR]  imagemagick convert required for benchmark image generation\n' >&2; exit 1; }
-# Each entry: output_path | WxH | gradient_spec
+# ── Benchmark images (Set5 + BSD100) ──────────────────────────────────────────
+# Real photographic benchmark inputs from jbhuang0604/SelfExSR (CC0 / research use).
+#   baby.png      — Set5 img_001 LR×4  128×128  face + smooth skin gradients
+#   butterfly.png — Set5 img_003 LR×2  128×128  fine repeating wing-scale texture
+#   bsd_45096.png — BSD100 img_017 LR×4 120×80  natural organic landscape texture
+# GT (HR) counterparts stored in gt/ for visual reference only (not checked by tests).
+[ "$CHECK_ONLY" -eq 0 ] && printf '\n── Downloading benchmark images ──\n'
+SELFEXSR="https://raw.githubusercontent.com/jbhuang0604/SelfExSR/master/data"
+# Each entry: output_path | url | description
 declare -a BENCH_IMGS=(
-  "$IMG_DIR/baby.png|128x128|gradient:pink-orange"
-  "$IMG_DIR/butterfly.png|128x128|gradient:cyan-blue"
-  "$IMG_DIR/bsd_45096.png|128x85|gradient:chartreuse-teal"
-  "$IMG_DIR/gt/baby.png|512x512|gradient:pink-orange"
-  "$IMG_DIR/gt/butterfly.png|512x512|gradient:cyan-blue"
-  "$IMG_DIR/gt/bsd_45096.png|512x340|gradient:chartreuse-teal"
+  "$IMG_DIR/baby.png|$SELFEXSR/Set5/image_SRF_4/img_001_SRF_4_LR.png|Set5 baby LR 128×128 (face)"
+  "$IMG_DIR/gt/baby.png|$SELFEXSR/Set5/image_SRF_4/img_001_SRF_4_HR.png|Set5 baby HR 512×512"
+  "$IMG_DIR/butterfly.png|$SELFEXSR/Set5/image_SRF_2/img_003_SRF_2_LR.png|Set5 butterfly LR 128×128 (texture)"
+  "$IMG_DIR/gt/butterfly.png|$SELFEXSR/Set5/image_SRF_4/img_003_SRF_4_HR.png|Set5 butterfly HR 256×256"
+  "$IMG_DIR/bsd_45096.png|$SELFEXSR/BSD100/image_SRF_4/img_017_SRF_4_LR.png|BSD100 img_017 LR 120×80 (organic)"
+  "$IMG_DIR/gt/bsd_45096.png|$SELFEXSR/BSD100/image_SRF_4/img_017_SRF_4_HR.png|BSD100 img_017 HR 480×320"
 )
 for entry in "${BENCH_IMGS[@]}"; do
-  IFS='|' read -r dest dims grad <<< "$entry"
-  bname=$(basename "$dest")
-  if [ -f "$dest" ]; then
-    [ "$CHECK_ONLY" -eq 0 ] && ok "$bname (already present)"
+  IFS='|' read -r dest url desc <<< "$entry"
+  relpath="${dest#$PROJECT_ROOT/}"
+  if [ -f "$dest" ] && [ "$(stat -c%s "$dest")" -gt 1000 ]; then
+    [ "$CHECK_ONLY" -eq 0 ] && ok "$relpath (already present)"
     continue
   fi
-  miss "$bname"
+  miss "$relpath — $desc"
   [ "$CHECK_ONLY" -eq 1 ] && continue
-  dl "Generating $bname (${dims})…"
+  dl "Fetching $relpath…"
   mkdir -p "$(dirname "$dest")"
-  convert -size "$dims" "$grad" "$dest" \
-    && ok "$bname (generated)" \
-    || { printf '[ERR]  convert failed for %s\n' "$bname" >&2; exit 1; }
+  curl -fL --user-agent "$UA" -o "$dest" "$url" \
+    && ok "$relpath (downloaded)" \
+    || { printf '[ERR]  curl failed for %s\n' "$relpath" >&2; exit 1; }
 done
 
 # ── Test video clip ────────────────────────────────────────────────────────────
