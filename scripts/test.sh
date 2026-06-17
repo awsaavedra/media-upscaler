@@ -118,6 +118,23 @@ if scripts/upscale-image.sh "$_TINY_IMG" "$_TMPDIR" 2>/dev/null; then
     [ "$SIZE" = "400x400" ] \
       && ok "image: 100×100 → 400×400 (4× confirmed)" \
       || fail "image: expected 400×400 output, got $SIZE"
+    # audit manifest: upscale-image.sh must write OUTPUT.audit.json
+    _IMG_AUDIT=$(find "$_TMPDIR" -name '*.audit.json' | head -1)
+    if [ -n "$_IMG_AUDIT" ] && [ -f "$_IMG_AUDIT" ]; then
+      python3 -c "
+import json
+d = json.load(open('$_IMG_AUDIT'))
+assert d.get('version') == 1, 'version!=1'
+assert d.get('media_type') == 'image', 'media_type!=image'
+assert 'input_sha256' in d, 'missing input_sha256'
+assert 'output_sha256' in d, 'missing output_sha256'
+assert 'elapsed_s' in d, 'missing elapsed_s'
+" 2>/dev/null \
+        && ok "image: audit manifest valid (version, media_type, sha256 fields)" \
+        || fail "image: audit manifest missing required fields — $(cat "$_IMG_AUDIT" 2>/dev/null | head -c 200)"
+    else
+      fail "image: audit manifest not written (expected *.audit.json in $_TMPDIR)"
+    fi
   fi
 else
   fail "image: smoke test — inference exited non-zero"
@@ -251,6 +268,12 @@ assert_exit "video: invalid SCALE (non-integer) → exit 1"   1 \
 assert_exit "video: invalid QUALITY → exit 1"                1 \
   scripts/upscale-video.sh -q ultra test-assets/videos/test-clip.mp4 /tmp/out.mp4
 
+assert_exit "video: invalid THERMAL_MODE → exit 1"           1 \
+  scripts/upscale-video.sh -T turbo test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
+assert_exit "video: invalid INTERPOLATE (3x) → exit 1"       1 \
+  scripts/upscale-video.sh -I 3x test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
 assert_exit "video: uncreateable OUTPUT dir → exit 2"        2 \
   scripts/upscale-video.sh test-assets/videos/test-clip.mp4 /proc/no-write/out.mp4
 
@@ -283,6 +306,49 @@ printf '%s' "$VDRY_HIGH" | grep -qE '\-s 4\b' \
   && ok "video -q high: scale is 4x" \
   || fail "video -q high: expected -s 4 in command — got: $VDRY_HIGH"
 
+VDRY_UH=$(scripts/upscale-video.sh -q ultrahigh -n test-assets/videos/test-clip.mp4 /tmp/out.mp4 2>/dev/null)
+printf '%s' "$VDRY_UH" | grep -q 'realesrgan' \
+  && ok "video -q ultrahigh: dry run uses realesrgan engine" \
+  || fail "video -q ultrahigh: dry run missing realesrgan — got: $VDRY_UH"
+printf '%s' "$VDRY_UH" | grep -qE '\-s 4\b' \
+  && ok "video -q ultrahigh: scale is 4x" \
+  || fail "video -q ultrahigh: expected -s 4 in command — got: $VDRY_UH"
+
+# -D / -I / -T flags must be accepted (exit 0) by dry-run.
+assert_exit "video: -D dedup flag accepted (-q low dry run)"            0 \
+  scripts/upscale-video.sh -q low -D -n \
+    test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
+assert_exit "video: -I 2x interpolation flag accepted (-q low dry run)" 0 \
+  scripts/upscale-video.sh -q low -I 2x -n \
+    test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
+assert_exit "video: -T conservative thermal flag accepted (-q low dry run)" 0 \
+  scripts/upscale-video.sh -q low -T conservative -n \
+    test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
+# ─── 8b. UNIFIED GRAMMAR (tool upscale) ─────────────────────────────────────────
+printf '\n── Unified grammar: tool upscale subcommands ──\n'
+assert_exit "tool upscale image -n (dry run via unified tool)" 0 \
+  bash tool upscale image -n "$_TINY_IMG" /tmp/out/
+
+assert_exit "tool upscale video -n (dry run via unified tool)" 0 \
+  bash tool upscale video -q low -n \
+    test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
+assert_exit "tool upscale (no subcommand) → exit 1" 1 \
+  bash tool upscale
+
+assert_exit "tool upscale badmedia → exit 1" 1 \
+  bash tool upscale badmedia input output
+
+# ─── 8c. IMAGE: -m auto DRY RUN ──────────────────────────────────────────────────
+printf '\n── Image: -m auto model selection (dry run) ──\n'
+AUTO_DRY=$(scripts/upscale-image.sh -m auto -n "$_TINY_IMG" /tmp/out/ 2>&1)
+printf '%s' "$AUTO_DRY" | grep -qE 'RealESRGAN_x4plus(_anime_6B)?' \
+  && ok "image -m auto: dry run resolved to a RealESRGAN model variant" \
+  || fail "image -m auto: dry run did not emit a RealESRGAN model — got: $AUTO_DRY"
+
 # ─── 9. VIDEO: LOW-QUALITY SMOKE TEST (ffmpeg, CPU, ~1 s) ───────────────────────
 printf '\n── Video: low-quality smoke test (ffmpeg lanczos) ──\n'
 _VID_TMPDIR=$(mktemp -d)
@@ -302,6 +368,23 @@ if scripts/upscale-video.sh -q low test-assets/videos/test-clip.mp4 "$_VID_OUT" 
     [ -n "$ACODEC" ] \
       && ok "video -q low: audio track preserved (codec: $ACODEC)" \
       || fail "video -q low: audio track missing from output"
+    # audit manifest: upscale-video.sh must write OUTPUT.audit.json on success
+    _AUDIT_JSON="${_VID_OUT}.audit.json"
+    if [ -f "$_AUDIT_JSON" ]; then
+      python3 -c "
+import json, sys
+d = json.load(open('$_AUDIT_JSON'))
+assert d.get('version') == 1, 'version!=1'
+assert d.get('media_type') == 'video', 'media_type!=video'
+assert 'input_sha256' in d, 'missing input_sha256'
+assert 'output_sha256' in d, 'missing output_sha256'
+assert 'elapsed_s' in d, 'missing elapsed_s'
+" 2>/dev/null \
+        && ok "video -q low: audit manifest valid (version, media_type, sha256 fields)" \
+        || fail "video -q low: audit manifest missing required fields — $(cat "$_AUDIT_JSON" 2>/dev/null | head -c 200)"
+    else
+      fail "video -q low: audit manifest not written — expected: $_AUDIT_JSON"
+    fi
   else
     fail "video -q low: output file missing or too small"
   fi
@@ -459,16 +542,20 @@ fi
 # output 3024×2000 at 4x (largest image in the suite — stress tests tile mode).
 printf '\n── Integration: nyc-night — night / low-light / point sources ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
-  _T=$(mktemp -d)
-  if scripts/upscale-image.sh -s 4 -t 512 \
-      test-assets/images/demo/nyc-night-lr756.png "$_T" 2>/dev/null; then
-    assert_image \
-      "nyc-night: 756×500 → 3024×2000 (night / low-light, largest asset)" \
-      "$_T/nyc-night-lr756_out.png" "3024x2000" 2000
+  if [ ! -f "test-assets/images/demo/nyc-night-lr756.png" ]; then
+    skip "nyc-night: asset not downloaded (run scripts/download-test-media.sh)"
   else
-    fail "nyc-night: inference exited non-zero"
+    _T=$(mktemp -d)
+    if scripts/upscale-image.sh -s 4 -t 512 \
+        test-assets/images/demo/nyc-night-lr756.png "$_T" 2>/dev/null; then
+      assert_image \
+        "nyc-night: 756×500 → 3024×2000 (night / low-light, largest asset)" \
+        "$_T/nyc-night-lr756_out.png" "3024x2000" 2000
+    else
+      fail "nyc-night: inference exited non-zero"
+    fi
+    rm -rf "$_T"
   fi
-  rm -rf "$_T"
 else
   skip "nyc-night low-light inference (run with --integration)"
 fi
@@ -574,9 +661,9 @@ if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
       [ "${VW:-0}" -eq 640 ] && [ "${VH:-0}" -eq 360 ] \
         && ok "test-clip -q low: 320×180 → 640×360 (2x confirmed)" \
         || fail "test-clip -q low: expected 640×360, got ${VW}x${VH}"
-      [ "${DUR:-0}" -ge 9 ] && [ "${DUR:-0}" -le 11 ] \
-        && ok "test-clip -q low: duration ${DUR}s (9–11 s range)" \
-        || fail "test-clip -q low: unexpected duration ${DUR}s"
+      [ "${DUR:-0}" -ge 2 ] && [ "${DUR:-0}" -le 4 ] \
+        && ok "test-clip -q low: duration ${DUR}s (2–4 s range)" \
+        || fail "test-clip -q low: unexpected duration ${DUR}s (expected 2–4 s; regenerate with download-test-media.sh)"
       [ -n "$ACODEC" ] \
         && ok "test-clip -q low: audio preserved (codec: $ACODEC)" \
         || fail "test-clip -q low: audio track missing from output"
@@ -609,9 +696,9 @@ if [ "$INTEGRATION_VIDEO" -eq 1 ]; then
     [ "${MW:-0}" -eq 640 ] && [ "${MH:-0}" -eq 360 ] \
       && ok "test-clip -q medium: 320×180 → 640×360 (2× confirmed)" \
       || fail "test-clip -q medium: expected 640×360, got ${MW}×${MH}"
-    [ "${MD:-0}" -ge 9 ] && [ "${MD:-0}" -le 11 ] \
-      && ok "test-clip -q medium: duration ${MD}s (9–11 s range)" \
-      || fail "test-clip -q medium: unexpected duration ${MD}s"
+    [ "${MD:-0}" -ge 2 ] && [ "${MD:-0}" -le 4 ] \
+      && ok "test-clip -q medium: duration ${MD}s (2–4 s range)" \
+      || fail "test-clip -q medium: unexpected duration ${MD}s (expected 2–4 s; regenerate with download-test-media.sh)"
   else
     fail "test-clip -q medium: video2x exited non-zero"
   fi
@@ -722,27 +809,29 @@ fi
 # photorealistic noise injected into the flat colour regions.
 printf '\n── Integration: great-wave — anime/illustration model (anime_6B) ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
-  _TA=$(mktemp -d)
-  _TP=$(mktemp -d)
-  if scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus_anime_6B \
-      test-assets/images/demo/great-wave-lr600.png "$_TA" 2>/dev/null; then
-    assert_image \
-      "great-wave anime_6B: 600×411 → 2400×1644 (illustration model)" \
-      "$_TA/great-wave-lr600_out.png" "2400x1644" 2000
+  if [ ! -f "test-assets/images/demo/great-wave-lr600.png" ]; then
+    skip "great-wave: asset not downloaded (run scripts/download-test-media.sh)"
   else
-    fail "great-wave: RealESRGAN_x4plus_anime_6B inference exited non-zero"
-  fi
-  # Cross-model comparison: photo model on same input must produce a different result,
-  # confirming model selection matters for illustration content.
-  if scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus \
-      test-assets/images/demo/great-wave-lr600.png "$_TP" 2>/dev/null; then
-    if cmp -s "$_TA/great-wave-lr600_out.png" "$_TP/great-wave-lr600_out.png"; then
-      fail "great-wave: anime_6B and x4plus produced identical output — model selection not working"
+    _TA=$(mktemp -d)
+    _TP=$(mktemp -d)
+    if scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus_anime_6B \
+        test-assets/images/demo/great-wave-lr600.png "$_TA" 2>/dev/null; then
+      assert_image \
+        "great-wave anime_6B: 600×411 → 2400×1644 (illustration model)" \
+        "$_TA/great-wave-lr600_out.png" "2400x1644" 2000
     else
-      ok "great-wave: anime_6B output differs from x4plus output (model selection confirmed)"
+      fail "great-wave: RealESRGAN_x4plus_anime_6B inference exited non-zero"
     fi
+    if scripts/upscale-image.sh -s 4 -m RealESRGAN_x4plus \
+        test-assets/images/demo/great-wave-lr600.png "$_TP" 2>/dev/null; then
+      if cmp -s "$_TA/great-wave-lr600_out.png" "$_TP/great-wave-lr600_out.png"; then
+        fail "great-wave: anime_6B and x4plus produced identical output — model selection not working"
+      else
+        ok "great-wave: anime_6B output differs from x4plus output (model selection confirmed)"
+      fi
+    fi
+    rm -rf "$_TA" "$_TP"
   fi
-  rm -rf "$_TA" "$_TP"
 else
   skip "great-wave anime/illustration model inference (run with --integration)"
 fi
@@ -779,16 +868,20 @@ fi
 # Scenario: 960×640 → 3840×2560; tiled run; window grids must stay coherent across tiles.
 printf '\n── Integration: metro-landscape — 4K cityscape ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
-  _T=$(mktemp -d)
-  if scripts/upscale-image.sh -s 4 -t 512 \
-      test-assets/images/demo/metro-landscape-lr960.png "$_T" 2>/dev/null; then
-    assert_image \
-      "metro-landscape: 960×640 → 3840×2560 (4K cityscape)" \
-      "$_T/metro-landscape-lr960_out.png" "3840x2560" 8000
+  if [ ! -f "test-assets/images/demo/metro-landscape-lr960.png" ]; then
+    skip "metro-landscape: asset not downloaded (run scripts/download-test-media.sh)"
   else
-    fail "metro-landscape: inference exited non-zero"
+    _T=$(mktemp -d)
+    if scripts/upscale-image.sh -s 4 -t 512 \
+        test-assets/images/demo/metro-landscape-lr960.png "$_T" 2>/dev/null; then
+      assert_image \
+        "metro-landscape: 960×640 → 3840×2560 (4K cityscape)" \
+        "$_T/metro-landscape-lr960_out.png" "3840x2560" 8000
+    else
+      fail "metro-landscape: inference exited non-zero"
+    fi
+    rm -rf "$_T"
   fi
-  rm -rf "$_T"
 else
   skip "metro-landscape 4K cityscape inference (run with --integration)"
 fi
@@ -825,16 +918,20 @@ fi
 # Scenario: 960×434 → 3840×1736; tiled; no seams across the panoramic width.
 printf '\n── Integration: yosemite-valley — 4K landscape, multi-texture ──\n'
 if [ "$INTEGRATION" -eq 1 ]; then
-  _T=$(mktemp -d)
-  if scripts/upscale-image.sh -s 4 -t 512 \
-      test-assets/images/demo/yosemite-valley-lr960.png "$_T" 2>/dev/null; then
-    assert_image \
-      "yosemite-valley: 960×434 → 3840×1736 (4K landscape)" \
-      "$_T/yosemite-valley-lr960_out.png" "3840x1736" 5000
+  if [ ! -f "test-assets/images/demo/yosemite-valley-lr960.png" ]; then
+    skip "yosemite-valley: asset not downloaded (run scripts/download-test-media.sh)"
   else
-    fail "yosemite-valley: inference exited non-zero"
+    _T=$(mktemp -d)
+    if scripts/upscale-image.sh -s 4 -t 512 \
+        test-assets/images/demo/yosemite-valley-lr960.png "$_T" 2>/dev/null; then
+      assert_image \
+        "yosemite-valley: 960×434 → 3840×1736 (4K landscape)" \
+        "$_T/yosemite-valley-lr960_out.png" "3840x1736" 5000
+    else
+      fail "yosemite-valley: inference exited non-zero"
+    fi
+    rm -rf "$_T"
   fi
-  rm -rf "$_T"
 else
   skip "yosemite-valley 4K landscape inference (run with --integration)"
 fi
