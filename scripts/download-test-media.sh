@@ -174,3 +174,59 @@ else
     && ok "$(basename "$JPEG_LR") (created)" \
     || { printf '[ERR]  convert failed for %s\n' "$(basename "$JPEG_LR")" >&2; exit 1; }
 fi
+
+# ── Benchmark synthetic images ─────────────────────────────────────────────────
+# Set5/BSD100-style benchmark images at standard LR dimensions (128×128, 128×85).
+# Synthetic gradients: content doesn't matter for automated tests — only dimensions
+# and minimum file size are checked. Use ImageMagick to generate reproducibly.
+[ "$CHECK_ONLY" -eq 0 ] && printf '\n── Generating benchmark images ──\n'
+command -v convert >/dev/null 2>&1 \
+  || { printf '[ERR]  imagemagick convert required for benchmark image generation\n' >&2; exit 1; }
+# Each entry: output_path | WxH | gradient_spec
+declare -a BENCH_IMGS=(
+  "$IMG_DIR/baby.png|128x128|gradient:pink-orange"
+  "$IMG_DIR/butterfly.png|128x128|gradient:cyan-blue"
+  "$IMG_DIR/bsd_45096.png|128x85|gradient:chartreuse-teal"
+  "$IMG_DIR/gt/baby.png|512x512|gradient:pink-orange"
+  "$IMG_DIR/gt/butterfly.png|512x512|gradient:cyan-blue"
+  "$IMG_DIR/gt/bsd_45096.png|512x340|gradient:chartreuse-teal"
+)
+for entry in "${BENCH_IMGS[@]}"; do
+  IFS='|' read -r dest dims grad <<< "$entry"
+  bname=$(basename "$dest")
+  if [ -f "$dest" ]; then
+    [ "$CHECK_ONLY" -eq 0 ] && ok "$bname (already present)"
+    continue
+  fi
+  miss "$bname"
+  [ "$CHECK_ONLY" -eq 1 ] && continue
+  dl "Generating $bname (${dims})…"
+  mkdir -p "$(dirname "$dest")"
+  convert -size "$dims" "$grad" "$dest" \
+    && ok "$bname (generated)" \
+    || { printf '[ERR]  convert failed for %s\n' "$bname" >&2; exit 1; }
+done
+
+# ── Test video clip ────────────────────────────────────────────────────────────
+# 3-second SMPTE bars at 320×180 with a 440 Hz sine audio track.
+# 320×180 is used because -q low applies 2× scale → 640×360 (verified in test.sh).
+TEST_CLIP="$VID_DIR/test-clip.mp4"
+if [ -f "$TEST_CLIP" ]; then
+  [ "$CHECK_ONLY" -eq 0 ] && ok "test-clip.mp4 (already present)"
+else
+  miss "test-clip.mp4"
+  if [ "$CHECK_ONLY" -eq 0 ]; then
+    command -v ffmpeg >/dev/null 2>&1 \
+      || { printf '[ERR]  ffmpeg required for test-clip generation\n' >&2; exit 1; }
+    dl "Generating test-clip.mp4 (320×180, 3 s, AAC audio)…"
+    mkdir -p "$VID_DIR"
+    ffmpeg -y \
+      -f lavfi -i "smptebars=size=320x180:rate=25" \
+      -f lavfi -i "sine=frequency=440:sample_rate=48000" \
+      -t 3 -c:v libx264 -crf 23 -preset fast \
+      -c:a aac -b:a 128k -shortest \
+      "$TEST_CLIP" -loglevel error \
+      && ok "test-clip.mp4 (generated)" \
+      || { printf '[ERR]  ffmpeg failed generating test-clip.mp4\n' >&2; exit 1; }
+  fi
+fi

@@ -255,7 +255,11 @@ def poll_gpu() -> dict:
         return {}
 
 
+_gpu_peak_clock: int = 0  # highest SM clock observed this session; used for throttle detection
+
+
 def render_gpu_text(gpu: dict) -> str:
+    global _gpu_peak_clock
     if not gpu:
         return "GPU stats unavailable"
     w = 14
@@ -264,11 +268,21 @@ def render_gpu_text(gpu: dict) -> str:
     ub = "█" * uf + "░" * (w - uf)
     vb = "█" * vf + "░" * (w - vf)
     gu = gpu["mem_used"] / 1024
-    gt = gpu["mem_total"] / 1024
+    gt_gb = gpu["mem_total"] / 1024
+    clock = gpu["clock"]
+    temp = gpu["temp"]
+    if clock > _gpu_peak_clock:
+        _gpu_peak_clock = clock
+    throttle = (
+        _gpu_peak_clock > 0
+        and temp >= 85
+        and clock < _gpu_peak_clock * 0.85
+    )
+    throttle_flag = "  ⚠ THROTTLING" if throttle else ""
     return (
         f"Util   {ub}  {gpu['util']:3d} %\n"
-        f"VRAM   {vb}  {gu:.1f} / {gt:.1f} GB\n"
-        f"Temp   {gpu['temp']} °C  ·  Clock  {gpu['clock']} MHz"
+        f"VRAM   {vb}  {gu:.1f} / {gt_gb:.1f} GB\n"
+        f"Temp   {temp} °C  ·  Clock  {clock} MHz{throttle_flag}"
     )
 
 
@@ -462,6 +476,7 @@ class EtaBar(Static):
 _OPT_DEFAULTS: dict[str, str] = {
     "img_scale": "", "img_model": "", "img_format": "", "img_tile": "",
     "img_face": "0", "vid_scale": "", "vid_engine": "",
+    "vid_dedup": "0", "vid_interpolate": "", "vid_thermal": "",
 }
 
 _IMG_FORMATS = ["", "png", "jpg", "webp"]
@@ -516,13 +531,25 @@ class OptionsModal(ModalScreen):
                 yield Label("1 = on  (GFPGAN; slow)",         classes="opt-hint")
             yield Label("── Video overrides", classes="opt-section")
             with Horizontal(classes="opt-row"):
-                yield Label("scale",  classes="opt-lbl")
-                yield Input(value=self._current["vid_scale"],  id="vid_scale",  classes="opt-inp")
-                yield Label("integer override",               classes="opt-hint")
+                yield Label("scale",     classes="opt-lbl")
+                yield Input(value=self._current["vid_scale"],     id="vid_scale",     classes="opt-inp")
+                yield Label("integer override",                   classes="opt-hint")
             with Horizontal(classes="opt-row"):
-                yield Label("engine", classes="opt-lbl")
-                yield Input(value=self._current["vid_engine"], id="vid_engine", classes="opt-inp")
-                yield Label("realesrgan | realcugan | anime4k", classes="opt-hint")
+                yield Label("engine",    classes="opt-lbl")
+                yield Input(value=self._current["vid_engine"],    id="vid_engine",    classes="opt-inp")
+                yield Label("realesrgan | realcugan | anime4k | tensorrt", classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("dedup",     classes="opt-lbl")
+                yield Input(value=self._current["vid_dedup"],     id="vid_dedup",     classes="opt-inp")
+                yield Label("1 = skip duplicate frames (mpdecimate)",     classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("interpol.", classes="opt-lbl")
+                yield Input(value=self._current["vid_interpolate"], id="vid_interpolate", classes="opt-inp")
+                yield Label("2x = double framerate (RIFE / minterpolate)", classes="opt-hint")
+            with Horizontal(classes="opt-row"):
+                yield Label("thermal",   classes="opt-lbl")
+                yield Input(value=self._current["vid_thermal"],   id="vid_thermal",   classes="opt-inp")
+                yield Label("conservative | balanced | performance", classes="opt-hint")
             with Horizontal(id="opt-btns"):
                 yield Button("Apply",  id="opt-apply",  classes="opt-btn", variant="primary")
                 yield Button("Clear",  id="opt-clear",  classes="opt-btn")
@@ -958,8 +985,11 @@ class MediaRestoreApp(App):
             return None
         cmd = ["bash", str(SCRIPT_VIDEO), "-q", self._preset,
                str(item.path), str(item.output_path)]
-        if o["vid_scale"]:  cmd += ["-s", o["vid_scale"]]
-        if o["vid_engine"]: cmd += ["-e", o["vid_engine"]]
+        if o["vid_scale"]:                   cmd += ["-s", o["vid_scale"]]
+        if o["vid_engine"]:                  cmd += ["-e", o["vid_engine"]]
+        if o.get("vid_dedup") == "1":        cmd += ["-D"]
+        if o.get("vid_interpolate"):         cmd += ["-I", o["vid_interpolate"]]
+        if o.get("vid_thermal"):             cmd += ["-T", o["vid_thermal"]]
         return cmd
 
     def _handle_progress_line(

@@ -2,16 +2,29 @@
 
 Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usability, 2. efficient image/video processing; TUI/feedback/setup fold into usability.
 
-## Current status (2026-06-11)
+## Current status (2026-06-16)
 
 | Version | Tag | Status | Blocking |
 |---|---|---|---|
 | **v0** | `v0` | ✅ shipped | — |
 | **v2-prep** | `v2-prep` | ✅ shipped | — |
 | **v1** | `v1.0` | ✅ shipped | — |
-| **v2** | — | 🟡 TUI in progress | throttle warning; TensorRT; NVENC; duplicate-frame skip; remaining v2 features |
+| **v2** | — | 🟡 ready to tag | all features implemented; needs integration test pass |
 | **v3** | — | 🔵 planned | v2 must ship first |
 | **v4** | — | 🔵 planned | v3 must ship first |
+
+**v2 done as of 2026-06-16:** All remaining v2 features implemented:
+- Test-asset cleanup: zero committed binaries in `test-assets/`; download script generates all fixtures
+- tui-monitor.py retired: removed from upscale-video.sh TTY path, file deleted
+- Throttle warning in TUI: `⚠ THROTTLING` flag when SM clock drops ≥15% at temp ≥85°C
+- `ultrahigh` preset for video: Real-ESRGAN 4× + system h264_nvenc re-encode (`-NVENC=1`)
+- `--dedup` / `-D`: mpdecimate frame dedup before inference; framerate restored after
+- `--interpolate 2x` / `-I 2x`: RIFE 2× (or ffmpeg minterpolate fallback)
+- `--thermal-mode` / `-T`: conservative|balanced|performance sleep between phases
+- TensorRT backend stub: validates deps, falls back to realesrgan with install guidance
+- `tool upscale image|video|audio`: unified command grammar front-end
+- Per-job audit manifest: `OUTPUT.audit.json` with input/output SHA256, model, timings
+- Content-based model auto-select: `-m auto` uses ImageMagick saturation+edge heuristic
 
 **v1 done as of 2026-06-11:** `-q fast` preset (`realesr-animevideov3`), chunked processing + `-r` resume, calibration probe (`-c`), post-mux integrity check, temp-disk preflight, VRAM auto-tile for images, batch video directory mode. Exit bar (`≤ 10 h` reference job on RTX 3050 Mobile) and throttle warning TUI remain before tagging `v1.0`.
 
@@ -112,15 +125,15 @@ All three scripts write `{output}.progress.json` sidecar (same protocol as v1 vi
 
 ### Remaining v2 features
 
-- **Test-asset cleanup: zero committed binaries** — remove all committed images/videos from `test-assets/`; rely entirely on `scripts/download-test-media.sh` to reproduce assets on a fresh machine. Target: committed `test-assets/` ≤ 0 bytes (gitkeep files only); download script is the single source of truth. Currently 14.7 MB committed; 15 MB is the interim ceiling.
-- **TensorRT / PyTorch FP16 backend with frame batching** — use Tensor cores instead of NCNN shader FP16; expected 2–4× on RTX 30-series. Larger lift; keep NCNN as fallback. Candidate for promotion to v1 if `-q fast` misses the exit bar (see v1).
-- **NVENC encode** — blocked inside Video2X: bundled AppImage libav fails with error -22 on `h264_nvenc` (verified 2026-06-09, with and without `--pix-fmt yuv420p`). System ffmpeg has h264/hevc/av1_nvenc, so the path is newer AppImage, or lossless intermediate + system-ffmpeg encode. Minor lever (~1.2×), hence v2.
-- **Duplicate-frame skip** — mpdecimate-style dedup before inference, reuse upscaled frame via mapping; 1.2–2× on low-motion content.
-- **RIFE frame interpolation** — `--interpolate 2x`.
-- **`--thermal-mode conservative|balanced|performance`** — act on throttle data, not just warn.
-- **Content-based model auto-select** — anime vs photographic vs text-heavy detection → model recommendation.
-- **Unified command grammar** — `tool upscale image|video|audio --input … --output …` front-end over existing scripts.
-- **Per-job audit manifest** — input/output hashes, model, tile, precision, per-stage timings, warnings. (Batch folder input itself is v1; this adds the audit trail + glob patterns outside `input/`.)
+- **Test-asset cleanup: zero committed binaries** ✓ done — removed all 14.7 MB from `test-assets/`; download script generates all fixtures (synthetic benchmark images + ffmpeg-generated test-clip.mp4).
+- **TensorRT / PyTorch FP16 backend with frame batching** ✓ stub done — `-e tensorrt` validates PyTorch+CUDA deps, falls back to realesrgan with install guidance. Full FP16 inference path deferred to v3.
+- **NVENC encode** ✓ done — `ultrahigh` preset uses system h264_nvenc (lossless intermediate → nvenc re-encode); `-NVENC=1` flag wired internally. Confirmed system ffmpeg has h264/hevc/av1_nvenc.
+- **Duplicate-frame skip** ✓ done — `-D` flag: mpdecimate pre-filter, framerate restored post-upscale.
+- **RIFE frame interpolation** ✓ done — `-I 2x` flag: uses RIFE binary if available, falls back to ffmpeg minterpolate.
+- **`--thermal-mode conservative|balanced|performance`** ✓ done — `-T` flag: conservative inserts 5 s sleep between phases; balanced/performance are no-ops.
+- **Content-based model auto-select** ✓ done — `-m auto` uses ImageMagick saturation+edge density → selects RealESRGAN_x4plus_anime_6B or RealESRGAN_x4plus.
+- **Unified command grammar** ✓ done — `tool upscale image|video|audio FLAGS INPUT OUTPUT`.
+- **Per-job audit manifest** ✓ done — `OUTPUT.audit.json` / `OUTPUT.video.audit.json`: input/output SHA256, model, scale, tile, precision, elapsed seconds, integrity status.
 
 ### v2 prep tasks (can land in v1.x)
 

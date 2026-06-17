@@ -107,8 +107,36 @@ fi
 [ -f "$INFERENCE_SCRIPT" ] \
   || { printf 'inference_realesrgan.py not found at %s\n' "$INFERENCE_SCRIPT" >&2; exit 2; }
 
-# Validate model: either a name (no slash) or an existing file path
-if printf '%s' "$MODEL" | grep -q '/'; then
+# Validate model: either "auto", a name (no slash), or an existing file path.
+# "auto" runs an ImageMagick heuristic to classify content and pick the best model.
+if [ "$MODEL" = "auto" ]; then
+  if [ -d "$INPUT" ]; then
+    # Batch auto-select: classify first found image; apply to all (fast heuristic)
+    _SAMPLE=$(find "$INPUT" ! -path '*/gt/*' \( -name '*.jpg' -o -name '*.jpeg' \
+      -o -name '*.png' -o -name '*.webp' \) | head -1)
+  else
+    _SAMPLE="$INPUT"
+  fi
+  if [ -f "$_SAMPLE" ] && command -v convert >/dev/null 2>&1; then
+    # Measure mean saturation (HSL) and edge density on a 256-px crop
+    _SAT=$(convert "$_SAMPLE" -resize 256x256! -colorspace HSL \
+      -channel Saturation -separate \
+      -format "%[fx:mean*100]" info: 2>/dev/null | head -1)
+    _EDGE=$(convert "$_SAMPLE" -resize 256x256! -canny 0x1+10%+30% \
+      -format "%[fx:mean*1000]" info: 2>/dev/null | head -1)
+    MODEL=$(printf '%s %s\n' "${_SAT:-50}" "${_EDGE:-10}" | awk '{
+      sat = $1 + 0; edge = $2 + 0;
+      if      (sat <  5)                     { print "RealESRGAN_x4plus" }
+      else if (edge > 60 && sat < 25)        { print "RealESRGAN_x4plus_anime_6B" }
+      else                                   { print "RealESRGAN_x4plus" }
+    }')
+    printf '[auto] content classifier: sat=%.1f edge=%.1f → model=%s\n' \
+      "${_SAT:-0}" "${_EDGE:-0}" "$MODEL" >&2
+  else
+    MODEL=RealESRGAN_x4plus
+    printf '[auto] classifier unavailable (imagemagick not found or no sample) → %s\n' "$MODEL" >&2
+  fi
+elif printf '%s' "$MODEL" | grep -q '/'; then
   [ -f "$MODEL" ] \
     || { printf 'Model file not found: %s\n' "$MODEL" >&2; exit 2; }
 fi
@@ -141,6 +169,9 @@ if [ "$BATCH" -eq 1 ]; then
 else
   _TOTAL=1
 fi
+
+_AUDIT_START=$SECONDS
+_AUDIT_WARNINGS=""
 
 # Sidecar path for TUI reattach (single-file mode only)
 _SIDECAR=""
@@ -265,4 +296,28 @@ if [ "$JSON_OUT" -eq 1 ]; then
   OUT_COUNT=$(find "$OUTPUT" -name "*.${FORMAT}" | wc -l)
   printf '{"input":"%s","output":"%s","model":"%s","scale":%s,"format":"%s","files_written":%s}\n' \
     "$INPUT" "$OUTPUT" "$MODEL" "$SCALE" "$FORMAT" "$OUT_COUNT"
+fi
+
+# Per-job audit manifest — written alongside output for provenance tracking.
+# Captures input/output hashes, model params, timing, and any warnings.
+if [ "$DRY_RUN" -eq 0 ]; then
+  _AUDIT_ELAPSED=$(( SECONDS - _AUDIT_START ))
+  _IN_HASH=""
+  _OUT_HASH=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    if [ -f "$INPUT" ]; then
+      _IN_HASH=$(sha256sum "$INPUT" 2>/dev/null | awk '{print $1}')
+    fi
+    _FIRST_OUT=$(find "$OUTPUT" -name "*.${FORMAT}" | head -1)
+    [ -n "$_FIRST_OUT" ] && _OUT_HASH=$(sha256sum "$_FIRST_OUT" 2>/dev/null | awk '{print $1}')
+  fi
+  [ "$FREE_KB" -lt 10485760 ] && _AUDIT_WARNINGS="low-disk"
+  _AUDIT_PATH="$OUTPUT/${_STEM:-batch}.audit.json"
+  printf '{"version":1,"media_type":"image","input":"%s","output":"%s","input_sha256":"%s","output_sha256":"%s","model":"%s","scale":%s,"tile":%s,"format":"%s","face_enhance":%s,"elapsed_s":%d,"warnings":"%s","ts":"%s"}\n' \
+    "$INPUT" "$OUTPUT" "${_IN_HASH:-}" "${_OUT_HASH:-}" \
+    "$MODEL" "$SCALE" "$TILE" "$FORMAT" \
+    "$([ "$FACE_ENHANCE" -eq 1 ] && printf 'true' || printf 'false')" \
+    "$_AUDIT_ELAPSED" "${_AUDIT_WARNINGS:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    > "$_AUDIT_PATH" 2>/dev/null || true
 fi

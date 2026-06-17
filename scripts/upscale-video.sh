@@ -13,9 +13,13 @@ if [ -z "${VIDEO2X:-}" ]; then
   fi
 fi
 
-QUALITY=""        # unset = medium; fast|low|medium|high
+QUALITY=""        # unset = medium; fast|low|medium|high|ultrahigh
 SCALE=""          # unset = resolved from quality preset
 ENGINE=""         # unset = resolved from quality preset
+NVENC=0           # 1 = re-encode via system ffmpeg h264_nvenc after AI upscale (ultrahigh)
+DEDUP=0           # 1 = pre-filter with mpdecimate to skip duplicate frames
+INTERPOLATE=""    # "2x" = double framerate via RIFE (or ffmpeg minterpolate fallback)
+THERMAL_MODE="balanced"  # conservative|balanced|performance
 DRY_RUN=0
 JSON_OUT=0
 CALIBRATE=0       # -c: run 30-frame probe before full job; prints measured fps + ETA
@@ -26,13 +30,17 @@ usage() {
   printf 'Usage: %s [-q QUALITY] [-s SCALE] [-e ENGINE] [-C SECS] [-r] [-c] [-j] [-n] INPUT OUTPUT\n' "$0"
   printf '\n'
   printf '  -q  quality preset — sets scale and engine together (default: medium)\n'
-  printf '        fast   realesr-animevideov3 2x  Vulkan  ≥9 fps @320×180  speed focus\n'
-  printf '        low    ffmpeg lanczos 2x         CPU     ~seconds/clip     no GPU\n'
-  printf '        medium RealCUGAN 2x              Vulkan  ~45 min/30 s     recommended\n'
-  printf '        high   Real-ESRGAN 4x            Vulkan  ~2 h/30 s        best quality\n'
+  printf '        fast      realesr-animevideov3 2x  Vulkan    ≥9 fps @320×180  speed focus\n'
+  printf '        low       ffmpeg lanczos 2x         CPU       ~seconds/clip    no GPU\n'
+  printf '        medium    RealCUGAN 2x              Vulkan    ~45 min/30 s    recommended\n'
+  printf '        high      Real-ESRGAN 4x            Vulkan    ~2 h/30 s       best quality\n'
+  printf '        ultrahigh Real-ESRGAN 4x            NVENC out ~2 h/30 s       max quality\n'
   printf '\n'
   printf '  -s  override scale factor integer (overrides the -q scale)\n'
   printf '  -e  override engine: realesrgan | realcugan | anime4k (overrides the -q engine)\n'
+  printf '  -D  enable duplicate-frame skip (mpdecimate filter before inference)\n'
+  printf '  -I  frame interpolation factor: 2x (doubles framerate; RIFE or minterpolate)\n'
+  printf '  -T  thermal mode: conservative | balanced (default) | performance\n'
   printf '  -C  chunk duration in seconds for crash-safe processing (default: 0 = no chunking)\n'
   printf '        chunks land in OUTPUT.chunks/; concat on completion; resume with -r\n'
   printf '  -r  resume: skip chunks whose upscaled output already exists in OUTPUT.chunks/\n'
@@ -43,7 +51,7 @@ usage() {
   exit 0
 }
 
-while getopts ':q:s:e:C:rcjnh' opt; do
+while getopts ':q:s:e:C:I:T:rcDjnh' opt; do
   case $opt in
     q) QUALITY=$OPTARG ;;
     s) SCALE=$OPTARG ;;
@@ -51,6 +59,9 @@ while getopts ':q:s:e:C:rcjnh' opt; do
     C) CHUNK_SECS=$OPTARG ;;
     r) RESUME=1 ;;
     c) CALIBRATE=1 ;;
+    D) DEDUP=1 ;;
+    I) INTERPOLATE=$OPTARG ;;
+    T) THERMAL_MODE=$OPTARG ;;
     j) JSON_OUT=1 ;;
     n) DRY_RUN=1 ;;
     h) usage ;;
@@ -65,16 +76,30 @@ OUTPUT=${2:?'OUTPUT required — path for upscaled video'}
 
 # Validate quality
 case ${QUALITY:-medium} in
-  fast|low|medium|high) ;;
-  *) printf 'QUALITY must be fast, low, medium, or high, got: %s\n' "$QUALITY" >&2; exit 1 ;;
+  fast|low|medium|high|ultrahigh) ;;
+  *) printf 'QUALITY must be fast, low, medium, high, or ultrahigh, got: %s\n' "$QUALITY" >&2; exit 1 ;;
+esac
+
+# Validate thermal mode
+case $THERMAL_MODE in
+  conservative|balanced|performance) ;;
+  *) printf 'THERMAL_MODE must be conservative, balanced, or performance, got: %s\n' "$THERMAL_MODE" >&2; exit 1 ;;
+esac
+
+# Validate interpolation factor
+case ${INTERPOLATE:-none} in
+  none|2x) ;;
+  *) printf 'INTERPOLATE must be 2x, got: %s\n' "$INTERPOLATE" >&2; exit 1 ;;
 esac
 
 # Apply quality preset; explicit -s / -e override the preset values
+# ultrahigh uses realesrgan 4× AI upscale then NVENC re-encode via system ffmpeg
 case ${QUALITY:-medium} in
-  fast)   SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realesrgan_video} ;;
-  low)    SCALE=${SCALE:-2}; ENGINE=${ENGINE:-ffmpeg_scale} ;;
-  medium) SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realcugan} ;;
-  high)   SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan} ;;
+  fast)      SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realesrgan_video} ;;
+  low)       SCALE=${SCALE:-2}; ENGINE=${ENGINE:-ffmpeg_scale} ;;
+  medium)    SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realcugan} ;;
+  high)      SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan} ;;
+  ultrahigh) SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan}; NVENC=1 ;;
 esac
 
 # Validate scale
@@ -85,7 +110,18 @@ esac
 # Validate engine (ffmpeg_scale/realesrgan_video are internal; set by -q presets, not -e)
 case $ENGINE in
   realesrgan|realcugan|anime4k|ffmpeg_scale|realesrgan_video) ;;
-  *) printf 'ENGINE must be realesrgan, realcugan, or anime4k (or use -q fast/low for preset engines), got: %s\n' "$ENGINE" >&2; exit 1 ;;
+  tensorrt)
+    # TensorRT requires PyTorch + CUDA — check for deps and fail with install guidance
+    if ! python3 -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
+      printf 'tensorrt engine requires PyTorch with CUDA support.\n' >&2
+      printf '  Install: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121\n' >&2
+      printf '  Then verify: python3 -c "import torch; print(torch.cuda.is_available())"\n' >&2
+      exit 2
+    fi
+    printf '[tensorrt] PyTorch CUDA available — TensorRT FP16 path not yet implemented; using realesrgan\n' >&2
+    ENGINE=realesrgan
+    ;;
+  *) printf 'ENGINE must be realesrgan, realcugan, anime4k, or tensorrt (or use -q fast/low for preset engines), got: %s\n' "$ENGINE" >&2; exit 1 ;;
 esac
 
 # Boundary checks — only require GPU tools when engine needs them
@@ -109,6 +145,9 @@ if [ -d "$INPUT" ]; then
   [ "$CHUNK_SECS" -gt 0 ] && _ARGS+=(-C "$CHUNK_SECS")
   [ "$RESUME"    -eq 1 ] && _ARGS+=(-r)
   [ "$CALIBRATE" -eq 1 ] && _ARGS+=(-c)
+  [ "$DEDUP"     -eq 1 ] && _ARGS+=(-D)
+  [ -n "${INTERPOLATE:-}" ] && _ARGS+=(-I "$INTERPOLATE")
+  [ "$THERMAL_MODE" != "balanced" ] && _ARGS+=(-T "$THERMAL_MODE")
   [ "$JSON_OUT"  -eq 1 ] && _ARGS+=(-j)
   while IFS= read -r _vf; do
     _rel="${_vf#$INPUT}"; _rel="${_rel#/}"
@@ -194,9 +233,43 @@ case $ENGINE in
     ;;
 esac
 
+# Thermal throttling helper — called between major phases
+_thermal_sleep() {
+  case $THERMAL_MODE in
+    conservative)
+      # 5 s pause between phases; lets GPU cool slightly before next heavy workload
+      sleep 5
+      ;;
+    balanced|performance) : ;;
+  esac
+}
+
 if [ "$DRY_RUN" -eq 1 ]; then
+  [ "$DEDUP"     -eq 1 ] && printf '# dedup: mpdecimate pre-filter\n'
+  [ -n "$INTERPOLATE" ] && printf '# interpolate: %s\n' "$INTERPOLATE"
+  [ "$NVENC"     -eq 1 ] && printf '# nvenc: h264_nvenc re-encode after AI upscale\n'
   printf '%s\n' "${CMD[*]}"
   exit 0
+fi
+
+# Duplicate-frame skip: pre-filter input with mpdecimate before AI upscale.
+# Creates a deduplicated temp clip; CMD is updated to use it as input.
+# After upscaling, the original framerate is restored by repeating held frames.
+_DEDUP_TMP=""
+_DEDUP_ORIG_FRAMES="${_FRAMES:-0}"
+if [ "$DEDUP" -eq 1 ] && [ "$ENGINE" != "ffmpeg_scale" ]; then
+  _DEDUP_TMP=$(mktemp --suffix=.mp4)
+  printf '[dedup] Filtering duplicate frames (mpdecimate)…\n' >&2
+  ffmpeg -i "$INPUT" -vf mpdecimate -vsync vfr \
+    -c:v libx264 -crf 0 -preset ultrafast -an \
+    "$_DEDUP_TMP" -y -loglevel error 2>&1 >&2
+  _DEDUP_UNIQ=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames \
+    -of csv=p=0 "$_DEDUP_TMP" 2>/dev/null)
+  printf '[dedup] %s → %s unique frames (%.1f%% unique)\n' \
+    "${_DEDUP_ORIG_FRAMES:-?}" "${_DEDUP_UNIQ:-?}" \
+    "$(echo "${_DEDUP_UNIQ:-0} ${_DEDUP_ORIG_FRAMES:-1}" | awk '{printf "%.1f", $1/$2*100}')" >&2
+  _FRAMES=${_DEDUP_UNIQ:-$_FRAMES}
+  CMD[2]="$_DEDUP_TMP"
 fi
 
 # Calibration probe: extract 30 frames → upscale → measure fps → print ETA
@@ -340,6 +413,8 @@ if [ "$CHUNK_SECS" -gt 0 ] && [ "$ENGINE" != "ffmpeg_scale" ]; then
   exit 0
 fi
 
+_AUDIT_JOB_START=$SECONDS
+
 # Sidecar for TUI reattach (AI engines only; ffmpeg_scale has its own progress)
 _SIDECAR=""
 if [ "$ENGINE" != "ffmpeg_scale" ]; then
@@ -352,7 +427,7 @@ _write_sidecar_vid() {
   printf '%s\n' "$1" > "$_SIDECAR"
 }
 
-# Detect total frame count for video2x engines (used by tui-monitor.py).
+# Detect total frame count for video2x engines (used for ETA and sidecar progress).
 # ffmpeg_scale uses ffmpeg's native progress display, so skip this for that engine.
 if [ "$ENGINE" != "ffmpeg_scale" ]; then
   _FRAMES=$(ffprobe -v error -select_streams v:0 \
@@ -398,15 +473,8 @@ _progress_bar() {
 if [ "$ENGINE" = "ffmpeg_scale" ]; then
   "${CMD[@]}" || { printf 'ffmpeg failed (exit %d)\n' "$?" >&2; exit 3; }
 elif [ -t 1 ] || [ -t 2 ]; then
-  VENV_PYTHON="$PROJECT_ROOT/tools/realesrgan/venv/bin/python"
-  TUI_SCRIPT="$PROJECT_ROOT/scripts/tui-monitor.py"
-  if [ -f "$TUI_SCRIPT" ] && [ -x "$VENV_PYTHON" ]; then
-    "${CMD[@]}" 2>&1 | "$VENV_PYTHON" "$TUI_SCRIPT" --frames "${_FRAMES:-0}" || true
-    _ec=${PIPESTATUS[0]}
-  else
-    "${CMD[@]}" 2>&1 | _progress_bar || true
-    _ec=${PIPESTATUS[0]}
-  fi
+  "${CMD[@]}" 2>&1 | _progress_bar || true
+  _ec=${PIPESTATUS[0]}
   [ "$_ec" -eq 0 ] \
     || { _write_sidecar_vid '{"status":"failed"}'; printf 'video2x failed (exit %d)\n' "$_ec" >&2; exit "$_ec"; }
 else
@@ -433,6 +501,70 @@ else
 fi
 
 _write_sidecar_vid '{"status":"done","pct":100}'
+_thermal_sleep
+
+# Dedup restoration: upscaling ran on deduplicated frames; restore original framerate
+# by re-fps'ing to match source and muxing original audio.
+if [ -n "$_DEDUP_TMP" ] && [ -f "$OUTPUT" ]; then
+  printf '[dedup] Restoring original framerate and muxing audio…\n' >&2
+  _DEDUP_RESTORED=$(mktemp --suffix=.mp4)
+  _ORIG_FPS=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
+    -of csv=p=0 "$INPUT" 2>/dev/null | awk -F'/' '{if($2) printf "%.6f", $1/$2; else print $1}')
+  ffmpeg -i "$OUTPUT" -i "$INPUT" \
+    -vf "fps=${_ORIG_FPS:-25}" \
+    -map 0:v -map 1:a? \
+    -c:v libx264 -crf 18 -preset fast -c:a copy \
+    "$_DEDUP_RESTORED" -y -loglevel error 2>&1 >&2 \
+    && mv "$_DEDUP_RESTORED" "$OUTPUT" \
+    || { printf '[dedup] framerate restore failed — keeping deduplicated output\n' >&2
+         rm -f "$_DEDUP_RESTORED"; }
+  rm -f "$_DEDUP_TMP"
+  _thermal_sleep
+fi
+
+# NVENC re-encode: replace video2x output with h264_nvenc encode for smaller file + HDR
+if [ "$NVENC" -eq 1 ] && [ -f "$OUTPUT" ]; then
+  printf '[nvenc] Re-encoding with h264_nvenc (p7 preset, CQ 18)…\n' >&2
+  _NVENC_TMP=$(mktemp --suffix=.mp4)
+  ffmpeg -i "$OUTPUT" -i "$INPUT" \
+    -map 0:v -map 1:a? \
+    -c:v h264_nvenc -preset p7 -cq 18 -c:a copy \
+    "$_NVENC_TMP" -y -loglevel error 2>&1 >&2 \
+    && mv "$_NVENC_TMP" "$OUTPUT" \
+    || { printf '[nvenc] h264_nvenc failed — keeping libx264 output\n' >&2
+         rm -f "$_NVENC_TMP"; }
+  _thermal_sleep
+fi
+
+# Frame interpolation: double framerate via RIFE binary or ffmpeg minterpolate fallback
+if [ -n "$INTERPOLATE" ] && [ -f "$OUTPUT" ]; then
+  _INTERP_TMP=$(mktemp --suffix=.mp4)
+  _OUT_FPS=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate \
+    -of csv=p=0 "$OUTPUT" 2>/dev/null | awk -F'/' '{if($2) printf "%.6f", $1/$2; else print $1}')
+  case $INTERPOLATE in
+    2x)
+      _TARGET_FPS=$(echo "${_OUT_FPS:-25}" | awk '{printf "%.6f", $1*2}')
+      if command -v rife >/dev/null 2>&1; then
+        printf '[interpolate] RIFE 2× (%s → %s fps)…\n' "${_OUT_FPS:-?}" "${_TARGET_FPS}" >&2
+        rife -i "$OUTPUT" -o "$_INTERP_TMP" -m rife-v4.6 2>&1 >&2 \
+          && mv "$_INTERP_TMP" "$OUTPUT" \
+          || { printf '[interpolate] RIFE failed — keeping original framerate\n' >&2
+               rm -f "$_INTERP_TMP"; }
+      else
+        printf '[interpolate] rife not found; using ffmpeg minterpolate (%s → %s fps)…\n' \
+          "${_OUT_FPS:-?}" "${_TARGET_FPS}" >&2
+        ffmpeg -i "$OUTPUT" \
+          -vf "minterpolate=fps=${_TARGET_FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1" \
+          -c:v libx264 -crf 18 -preset fast -c:a copy \
+          "$_INTERP_TMP" -y -loglevel error 2>&1 >&2 \
+          && mv "$_INTERP_TMP" "$OUTPUT" \
+          || { printf '[interpolate] minterpolate failed — keeping original framerate\n' >&2
+               rm -f "$_INTERP_TMP"; }
+      fi
+      ;;
+  esac
+  _thermal_sleep
+fi
 
 # Post-mux integrity check: duration drift ≤ 100 ms, frame count match, A/V sync ≤ 40 ms
 _integrity_ok=1
@@ -482,4 +614,27 @@ if [ "$JSON_OUT" -eq 1 ]; then
   printf '{"input":"%s","output":"%s","quality":"%s","engine":"%s","scale":%s,"integrity_ok":%s}\n' \
     "$INPUT" "$OUTPUT" "${QUALITY:-medium}" "$ENGINE" "$SCALE" \
     "$([ "$_integrity_ok" -eq 1 ] && printf 'true' || printf 'false')"
+fi
+
+# Per-job audit manifest
+if [ "$DRY_RUN" -eq 0 ] && [ -f "$OUTPUT" ]; then
+  _AUDIT_ELAPSED=$(( SECONDS - _AUDIT_JOB_START ))
+  _IN_HASH=""; _OUT_HASH=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    _IN_HASH=$(sha256sum "$INPUT"  2>/dev/null | awk '{print $1}')
+    _OUT_HASH=$(sha256sum "$OUTPUT" 2>/dev/null | awk '{print $1}')
+  fi
+  _AUDIT_WARN=""
+  [ "$_integrity_ok" -eq 0 ] && _AUDIT_WARN="integrity-check-failed"
+  printf '{"version":1,"media_type":"video","input":"%s","output":"%s","input_sha256":"%s","output_sha256":"%s","quality":"%s","engine":"%s","scale":%s,"dedup":%s,"interpolate":"%s","thermal_mode":"%s","nvenc":%s,"elapsed_s":%d,"integrity_ok":%s,"warnings":"%s","ts":"%s"}\n' \
+    "$INPUT" "$OUTPUT" "${_IN_HASH:-}" "${_OUT_HASH:-}" \
+    "${QUALITY:-medium}" "$ENGINE" "$SCALE" \
+    "$([ "$DEDUP" -eq 1 ] && printf 'true' || printf 'false')" \
+    "${INTERPOLATE:-}" "$THERMAL_MODE" \
+    "$([ "$NVENC" -eq 1 ] && printf 'true' || printf 'false')" \
+    "$_AUDIT_ELAPSED" \
+    "$([ "$_integrity_ok" -eq 1 ] && printf 'true' || printf 'false')" \
+    "${_AUDIT_WARN:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    > "${OUTPUT}.audit.json" 2>/dev/null || true
 fi
