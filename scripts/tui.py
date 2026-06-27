@@ -35,11 +35,11 @@ VIDEO_EXTS = frozenset({".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv"})
 
 # Seed ETA estimates in seconds per preset, per media type
 _ETA_SEEDS: dict[str, dict[str, float]] = {
-    "image": {"low": 30.0, "medium": 120.0, "high": 120.0, "ultrahigh": 300.0},
-    "video": {"low": 10.0, "medium": 1320.0, "high": 5400.0, "ultrahigh": 7200.0},
+    "image": {"low": 30.0, "medium": 120.0, "high": 120.0, "xhigh": 300.0},
+    "video": {"low": 10.0, "medium": 1320.0, "high": 5400.0, "xhigh": 7200.0},
 }
 
-_PRESETS = ["low", "medium", "high", "ultrahigh"]
+_PRESETS = ["low", "medium", "high", "xhigh"]
 
 SCRIPT_IMAGE = SCRIPT_DIR / "upscale-image.sh"
 SCRIPT_VIDEO = SCRIPT_DIR / "upscale-video.sh"
@@ -200,11 +200,16 @@ def build_eta_text(items: list[MediaItem], run_start: float | None) -> str:
             return "No items selected  ·  [a] select all  ·  [s] to start"
         return f"Total ETA  {_fmt_mins(total_s)}   ({_breakdown(queued)})"
     elapsed = time.time() - run_start
+    active = [i for i in items if i.status == "active"]
     if not queued:
+        if active:
+            name = active[0].path.name
+            return f"Elapsed  {_fmt_dur(elapsed)}  ·  Processing {name} (last item)…"
         return f"Elapsed  {_fmt_dur(elapsed)}  ·  Queue complete"
+    suffix = f"  ·  {len(active)} active" if active else ""
     return (
         f"Elapsed  {_fmt_dur(elapsed)}  ·  "
-        f"Total ETA  {_fmt_mins(total_s)} remaining   ({len(queued)} queued)"
+        f"Total ETA  {_fmt_mins(total_s)} remaining   ({len(queued)} queued{suffix})"
     )
 
 
@@ -307,6 +312,27 @@ def parse_image_progress(line: str, total_files: int) -> dict | None:
     return None
 
 
+def normalize_sidecar(data: dict) -> dict:
+    """Normalize a `{output}.progress.json` payload into TUI fields.
+
+    The scripts emit different throughput keys: upscale-video.sh writes `fps`,
+    upscale-image.sh writes neither. Unify them to a single `throughput` string
+    so the reattach poller has one authoritative shape to consume.
+    """
+    out: dict = {"status": data.get("status", "running")}
+    if "pct" in data:
+        out["pct"] = int(data["pct"])
+    throughput = data.get("throughput")
+    if throughput is None and data.get("fps") not in (None, "", "0"):
+        throughput = f"{data['fps']} fps"
+    if throughput:
+        out["throughput"] = str(throughput)
+    remaining = data.get("remaining")
+    if remaining:
+        out["eta"] = str(remaining)
+    return out
+
+
 def parse_video_progress(line: str) -> dict | None:
     clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line).replace("\r", "")
     m = _VID_FRAME_RE.search(clean)
@@ -315,6 +341,29 @@ def parse_video_progress(line: str) -> dict | None:
     cur, tot, fps, _elapsed, remaining = m.groups()
     pct = round(int(cur) / max(int(tot), 1) * 100)
     return {"pct": pct, "throughput": f"{fps.strip()} fps", "eta": remaining.strip()}
+
+
+def split_progress_stream(buf: str) -> tuple[list[tuple[str, bool]], str]:
+    """Split a raw subprocess buffer on CR *and* LF, returning (segment, is_log)
+    pairs plus the trailing incomplete remainder.
+
+    video2x redraws its progress bar in place with '\\r' and no newline, so a
+    plain readline() never yields it until the job ends. A '\\n'-terminated
+    segment is a real log line (is_log=True); a '\\r'-terminated one is a
+    progress redraw (is_log=False — parse it, but don't spam the log).
+    """
+    segments: list[tuple[str, bool]] = []
+    pos = 0
+    while True:
+        m = re.search(r"[\r\n]", buf[pos:])
+        if m is None:
+            break
+        start = pos + m.start()
+        seg = buf[pos:start].strip()
+        if seg:
+            segments.append((seg, buf[start] == "\n"))
+        pos = start + 1
+    return segments, buf[pos:]
 
 
 # ── Widgets ───────────────────────────────────────────────────────────────────
@@ -413,14 +462,20 @@ class ActiveJobPanel(Widget):
         self.query_one("#job-bar", ProgressBar).update(progress=0, total=100)
         self.query_one("#job-detail", Label).update("Press [s] to start")
 
-    def update_job(self, item: MediaItem) -> None:
+    def update_job(self, item: MediaItem, elapsed: float = 0.0) -> None:
         self.query_one("#job-name", Label).update(item.path.name)
         if item.pct is not None:
             self.query_one("#job-bar", ProgressBar).update(progress=item.pct, total=100)
-        detail = item.throughput_str or ""
+        # Elapsed always ticks while a job runs, so the panel is never ambiguous
+        # about whether work is happening — even before the first progress line.
+        parts: list[str] = []
+        if elapsed > 0:
+            parts.append(f"running {_fmt_dur(elapsed)}")
+        if item.throughput_str:
+            parts.append(item.throughput_str)
         if item.eta_str:
-            detail = (detail + "  ·  " if detail else "") + f"{item.eta_str} left"
-        self.query_one("#job-detail", Label).update(detail or "running…")
+            parts.append(f"{item.eta_str} left")
+        self.query_one("#job-detail", Label).update("  ·  ".join(parts) or "starting…")
 
 
 _GPU_CSS = """
@@ -437,6 +492,81 @@ class GpuPanel(Static):
     _render_markup = False  # ASCII bar chars (█ ░) are plain text
 
 
+# ── Keymap ─────────────────────────────────────────────────────────────────────
+# Single source of truth for key bindings, the footer hint bar, and the ? help
+# overlay. Defining a key here registers it everywhere at once, so the visible
+# hints can never drift from the actual bindings.
+
+@dataclass(frozen=True)
+class KeyAction:
+    binds: tuple[tuple[str, str], ...]  # (textual_key, action_name) pairs to register
+    display: str                         # key glyph shown to the user, e.g. "↑↓", "Space"
+    label: str                           # short footer verb, e.g. "Move", "Toggle"
+    help: str                            # full one-line description for the ? overlay
+    group: str                           # footer group heading: "SELECT" | "RUN"
+
+
+_KEYMAP: tuple[KeyAction, ...] = (
+    KeyAction((("up", "nav_up"), ("down", "nav_down")), "↑↓", "Move",
+              "Move cursor up / down", "SELECT"),
+    KeyAction((("space", "toggle_item"),), "Space", "Toggle",
+              "Toggle the highlighted item in / out of the queue", "SELECT"),
+    KeyAction((("a", "select_all"),), "a", "All",
+              "Select all eligible items", "SELECT"),
+    KeyAction((("n", "select_none"),), "n", "None",
+              "Unselect every item", "SELECT"),
+    KeyAction((("t", "invert_sel"),), "t", "Invert",
+              "Invert the current selection", "SELECT"),
+    KeyAction((("r", "retry_failed"),), "r", "Retry",
+              "Re-queue every failed item", "SELECT"),
+    KeyAction((("f", "force_redo"),), "f", "Redo",
+              "Force re-run the highlighted already-done item", "SELECT"),
+    KeyAction((("s", "start_batch"),), "s", "Start",
+              "Start processing the queued items", "RUN"),
+    KeyAction((("p", "pause_resume"),), "p", "Pause",
+              "Pause / resume the active job", "RUN"),
+    KeyAction((("c", "cancel_job"),), "c", "Cancel",
+              "Cancel the active job (it returns to the queue)", "RUN"),
+    KeyAction((("P", "cycle_preset"),), "P", "Preset",
+              "Cycle quality preset: low → medium → high → xhigh", "RUN"),
+    KeyAction((("o", "options"),), "o", "Options",
+              "Open the per-flag overrides modal", "RUN"),
+    KeyAction((("d", "change_dir"),), "d", "Dir",
+              "Change the input directory and rescan", "RUN"),
+    KeyAction((("question_mark", "help"),), "?", "Help",
+              "Show / hide this key reference", "RUN"),
+    KeyAction((("q", "request_quit"),), "q", "Quit",
+              "Quit (blocked while a job is active)", "RUN"),
+)
+
+
+def build_bindings() -> list[Binding]:
+    """Register every keymap entry as a Textual binding (hidden — the footer
+    and ? overlay render the hints, not Textual's own Footer widget)."""
+    return [
+        Binding(key, action, show=False)
+        for entry in _KEYMAP
+        for (key, action) in entry.binds
+    ]
+
+
+def footer_rows() -> list[str]:
+    """One footer line per group, e.g. 'SELECT  ↑↓=Move  Space=Toggle  …'."""
+    groups: dict[str, list[str]] = {}
+    order: list[str] = []
+    for entry in _KEYMAP:
+        if entry.group not in groups:
+            groups[entry.group] = []
+            order.append(entry.group)
+        groups[entry.group].append(f"{entry.display}={entry.label}")
+    return [f"{name:<7} " + "  ".join(groups[name]) for name in order]
+
+
+def help_rows() -> list[tuple[str, str]]:
+    """(key glyph, full description) for every action, for the ? overlay."""
+    return [(entry.display, entry.help) for entry in _KEYMAP]
+
+
 _KEY_CSS = """
 KeyHintsBar {
     height: 2;
@@ -446,15 +576,12 @@ KeyHintsBar {
 }
 """
 
-_ROW1 = "[↑↓] navigate   [SPACE] toggle   [a] all   [n] none   [t] invert   [r] retry failed   [f] force redo"
-_ROW2 = "[s] start   [p] pause/resume   [c] cancel job   [P] preset   [o] options   [d] change dir   [q] quit"
-
 
 class KeyHintsBar(Static):
-    _render_markup = False  # [↑↓] [SPACE] etc. are literal key hint text
+    _render_markup = False  # ↑↓ Space etc. are literal key hint text
 
     def render(self) -> str:
-        return f"{_ROW1}\n{_ROW2}"
+        return "\n".join(footer_rows())
 
 
 _ETA_CSS = """
@@ -605,6 +732,41 @@ class DirPrompt(ModalScreen):
             self.dismiss(None)
 
 
+# ── Help overlay ───────────────────────────────────────────────────────────────
+
+class HelpScreen(ModalScreen):
+    """Full key reference. Rendered from _KEYMAP so it never drifts."""
+
+    CSS = """
+    HelpScreen { align: center middle; }
+    #help-dialog {
+        width: 60;
+        height: auto;
+        padding: 1 2;
+        border: thick $primary;
+        background: $surface;
+    }
+    #help-title { text-style: bold; margin-bottom: 1; }
+    .help-row { height: 1; }
+    .help-key { width: 8; color: $accent; }
+    .help-desc { width: 1fr; color: $text; }
+    #help-foot { margin-top: 1; color: $text-muted; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help-dialog"):
+            yield Label("Keyboard reference", id="help-title")
+            for glyph, desc in help_rows():
+                with Horizontal(classes="help-row"):
+                    yield Label(glyph, classes="help-key", markup=False)
+                    yield Label(desc, classes="help-desc", markup=False)
+            yield Label("?, Esc or q to close", id="help-foot")
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("escape", "question_mark", "q", "enter"):
+            self.dismiss(None)
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 _APP_CSS = """
@@ -631,22 +793,7 @@ class MediaRestoreApp(App):
     CSS = _APP_CSS
     TITLE = "media-restore v2"
 
-    BINDINGS = [
-        Binding("up",    "nav_up",        show=False),
-        Binding("down",  "nav_down",      show=False),
-        Binding("space", "toggle_item",   show=False),
-        Binding("a",     "select_all",    show=False),
-        Binding("n",     "select_none",   show=False),
-        Binding("t",     "invert_sel",    show=False),
-        Binding("r",     "retry_failed",  show=False),
-        Binding("f",     "force_redo",    show=False),
-        Binding("s",     "start_batch",   show=False),
-        Binding("p",     "pause_resume",  show=False),
-        Binding("c",     "cancel_job",    show=False),
-        Binding("P",     "cycle_preset",  show=False),
-        Binding("o",     "options",       show=False),
-        Binding("q",     "request_quit",  show=False),
-    ]
+    BINDINGS = build_bindings()  # generated from _KEYMAP — see the Keymap section
 
     def __init__(self, input_dir: Path = INPUT_DIR, preset: str = "medium") -> None:
         super().__init__()
@@ -657,6 +804,7 @@ class MediaRestoreApp(App):
         self._cursor: int = 0
         self._run_start: float | None = None
         self._active_item: MediaItem | None = None
+        self._job_start: float | None = None
         self._job_proc: asyncio.subprocess.Process | None = None
         self._paused = False
         self._gpu: dict = {}
@@ -693,7 +841,17 @@ class MediaRestoreApp(App):
         self.query_one(GpuPanel).update("waiting for job…")
         self.set_interval(2.0, self._tick_gpu)
         self.set_interval(5.0, self._tick_sidecars)
+        self.set_interval(1.0, self._tick_active)
         self._reattach_sidecars()
+
+    def _tick_active(self) -> None:
+        """Tick the active job's elapsed clock every second so the panel visibly
+        moves even when no progress line has arrived yet."""
+        item = self._active_item
+        if item is None or self._job_start is None or item.status != "active":
+            return
+        self.query_one(ActiveJobPanel).update_job(item, time.time() - self._job_start)
+        self._update_eta()
 
     def _populate_rows(self) -> None:
         img_list = self.query_one("#img-list", Vertical)
@@ -787,12 +945,15 @@ class MediaRestoreApp(App):
                     item.error_msg = str(data.get("error", "script error"))
                     changed = True
                 else:
-                    new_pct = int(data.get("pct", item.pct))
+                    norm = normalize_sidecar(data)
+                    new_pct = norm.get("pct", item.pct)
                     if new_pct != item.pct:
                         item.pct = new_pct
                         changed = True
-                    item.throughput_str = str(data.get("throughput", item.throughput_str))
-                    item.eta_str = str(data.get("remaining", item.eta_str))
+                    if norm.get("throughput"):
+                        item.throughput_str = norm["throughput"]
+                    if norm.get("eta"):
+                        item.eta_str = norm["eta"]
             except Exception:
                 pass
         if changed:
@@ -894,6 +1055,7 @@ class MediaRestoreApp(App):
     def _run_next(self, queue: list[MediaItem]) -> None:
         if not queue:
             self._active_item = None
+            self._job_start = None
             self.query_one(ActiveJobPanel).set_idle()
             self._update_ui()
             self._log("[bold green]Batch complete[/bold green]")
@@ -914,11 +1076,12 @@ class MediaRestoreApp(App):
             item.status = "failed"
             item.error_msg = "script not found"
             self._active_item = None
-            self.call_from_thread(self._run_next, remaining)
+            self._run_next(remaining)
             return
 
         self._log(f"→ {item.path.name}  [{item.media_type}  {self._preset}]")
         job_start = time.time()
+        self._job_start = job_start
         total_files = 1
 
         proc = await asyncio.create_subprocess_exec(
@@ -930,10 +1093,21 @@ class MediaRestoreApp(App):
         self._job_proc = proc
 
         async def drain(stream: asyncio.StreamReader) -> None:
-            async for raw in stream:
-                line = raw.decode(errors="replace").rstrip()
-                self._handle_progress_line(line, item, total_files)
-                self._log(line)
+            pending = ""
+            while True:
+                chunk = await stream.read(4096)
+                if not chunk:
+                    break
+                pending += chunk.decode(errors="replace")
+                segments, pending = split_progress_stream(pending)
+                for seg, is_log in segments:
+                    self._handle_progress_line(seg, item, total_files)
+                    if is_log:  # \r progress redraws update the bar but don't spam the log
+                        self._log(seg)
+            tail = pending.strip()
+            if tail:
+                self._handle_progress_line(tail, item, total_files)
+                self._log(tail)
 
         await asyncio.gather(drain(proc.stdout), drain(proc.stderr))
         rc = await proc.wait()
@@ -950,7 +1124,7 @@ class MediaRestoreApp(App):
             self._log(f"[red]✗ {item.path.name} failed (exit {rc})[/red]")
 
         self._active_item = None
-        self.call_from_thread(self._after_job, item, remaining, job_start)
+        self._after_job(item, remaining, job_start)
 
     def _after_job(
         self, item: MediaItem, remaining: list[MediaItem], job_start: float = 0.0
@@ -1007,10 +1181,11 @@ class MediaRestoreApp(App):
             item.throughput_str = prog["throughput"]
         if prog.get("eta"):
             item.eta_str = prog["eta"]
-        self.call_from_thread(self._refresh_active_panel, item)
+        self._refresh_active_panel(item)
 
     def _refresh_active_panel(self, item: MediaItem) -> None:
-        self.query_one(ActiveJobPanel).update_job(item)
+        elapsed = time.time() - self._job_start if self._job_start else 0.0
+        self.query_one(ActiveJobPanel).update_job(item, elapsed)
         self._update_eta()
         self._update_section_counts()
 
@@ -1057,6 +1232,9 @@ class MediaRestoreApp(App):
         )
 
     def action_cycle_preset(self) -> None:
+        # NOTE: a PresetModal picker was attempted but hit a Textual 8.2.7 render
+        # quirk ('str' object has no attribute 'render_strips') on a later render.
+        # Reverted to cycle until that's resolved — see readme.md TODO.
         if self._active_item is not None:
             self._log("[yellow]Cannot change preset while a job is active[/yellow]")
             return
@@ -1067,7 +1245,7 @@ class MediaRestoreApp(App):
                 item.est_seconds = _ETA_SEEDS[item.media_type].get(self._preset, 120.0)
         self._update_ui()
         self._update_header()
-        self._log(f"Preset → {self._preset}")
+        self._log(f"Preset → {self._preset}  (P to cycle)")
 
     def action_options(self) -> None:
         def _apply(result: dict[str, str] | None) -> None:
@@ -1082,6 +1260,12 @@ class MediaRestoreApp(App):
                 self._log("Options cleared — using preset defaults")
 
         self.push_screen(OptionsModal(self._opts), _apply)
+
+    def action_help(self) -> None:
+        if isinstance(self.screen, HelpScreen):
+            self.pop_screen()
+        else:
+            self.push_screen(HelpScreen())
 
     def action_change_dir(self) -> None:
         def _apply(new_path: str | None) -> None:
@@ -1118,7 +1302,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="media-restore v2 TUI")
     parser.add_argument("--input", type=Path, default=INPUT_DIR, metavar="DIR")
     parser.add_argument("-q", "--preset", default="medium",
-                        choices=["low", "medium", "high", "ultrahigh"])
+                        choices=["low", "medium", "high", "xhigh"])
     args = parser.parse_args()
     MediaRestoreApp(input_dir=args.input, preset=args.preset).run()
 

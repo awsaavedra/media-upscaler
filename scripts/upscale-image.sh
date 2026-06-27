@@ -23,11 +23,11 @@ usage() {
   printf '  No args: sweeps test-assets/images/ → output/images/ (skips gt/ dirs)\n'
   printf '  INPUT   image file or directory (directories recurse, skipping gt/)\n'
   printf '  OUTPUT  output directory (default: output/images/)\n'
-  printf '  -q  quality preset: low | medium | high | ultrahigh (raw flags below override preset)\n'
+  printf '  -q  quality preset: low | medium | high | xhigh (raw flags below override preset)\n'
   printf '        low       2x  RealESRGAN_x2plus  no-face  tile=256  fast, ~1/4 VRAM\n'
   printf '        medium    4x  RealESRGAN_x4plus  no-face  tile=512  default\n'
   printf '        high      4x  RealESRGAN_x4plus  face     tile=512  portraits/archival\n'
-  printf '        ultrahigh 4x  RealESRGAN_x4plus  face     tile=0    max quality, full VRAM\n'
+  printf '        xhigh 4x  RealESRGAN_x4plus  face     tile=0    max quality, full VRAM\n'
   printf '  -s  upscale factor integer (default: 4)\n'
   printf '  -m  model name or /abs/path/to/model.pth (default: RealESRGAN_x4plus)\n'
   printf '  -f  output format: png | jpg | webp (default: png)\n'
@@ -45,8 +45,8 @@ while getopts ':q:s:m:f:t:Fbjnh' opt; do
          low)       SCALE=2; MODEL=RealESRGAN_x2plus; FACE_ENHANCE=0; TILE=256 ;;
          medium)    SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=0; TILE=512 ;;
          high)      SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=512 ;;
-         ultrahigh) SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=0   ;;
-         *) printf 'Unknown preset: %s  (low|medium|high|ultrahigh)\n' "$OPTARG" >&2; exit 1 ;;
+         xhigh) SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=0   ;;
+         *) printf 'Unknown preset: %s  (low|medium|high|xhigh)\n' "$OPTARG" >&2; exit 1 ;;
        esac ;;
     s) SCALE=$OPTARG ;;
     m) MODEL=$OPTARG ;;
@@ -230,7 +230,10 @@ _infer() {
   local src="$1" dst="$2" total="$3" actual_src tmp=""
   if [ -d "$src" ]; then
     tmp=$(mktemp -d)
-    find "$src" -maxdepth 1 \( -name '*.jpg' -o -name '*.jpeg' \
+    # Resolve to an absolute path first: find emits paths as given, so a relative src
+    # would create symlinks whose target dangles from the tmp dir (cv2.imread → None).
+    local abs_src; abs_src="$(cd "$src" && pwd)"
+    find "$abs_src" -maxdepth 1 \( -name '*.jpg' -o -name '*.jpeg' \
       -o -name '*.png' -o -name '*.webp' \) -exec ln -s {} "$tmp/" \;
     actual_src="$tmp"
   else

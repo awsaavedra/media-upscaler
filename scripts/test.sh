@@ -141,6 +141,22 @@ else
   fail "image: smoke test — inference exited non-zero"
 fi
 
+# ─── 4b. IMAGE: BATCH MODE WITH RELATIVE INPUT PATH (regression) ───────────────
+# Batch mode symlinks images into a temp dir for inference. A relative INPUT dir once
+# produced symlinks whose target dangled from /tmp, so cv2.imread returned None and the
+# run crashed. Guard that a relative directory path still yields output.
+printf '\n── Image: batch mode with relative input path ──\n'
+_REL_BASE="reltest-$$"
+mkdir -p "$_REL_BASE/in"
+convert -size 64x64 gradient:red-blue "$_REL_BASE/in/sample.png" 2>/dev/null
+if scripts/upscale-image.sh "$_REL_BASE/in" "$_REL_BASE/out" >/dev/null 2>&1 \
+   && [ -n "$(find "$_REL_BASE/out" -name '*.png' 2>/dev/null | head -1)" ]; then
+  ok "image batch: relative INPUT path produces output (no dangling symlink)"
+else
+  fail "image batch: relative INPUT path produced no output — dangling-symlink regression"
+fi
+rm -rf "$_REL_BASE"
+
 # ─── 5. IMAGE: JSON OUTPUT ──────────────────────────────────────────────────────
 printf '\n── Image: JSON output flag ──\n'
 _TMPDIR2=$(mktemp -d)
@@ -307,13 +323,13 @@ printf '%s' "$VDRY_HIGH" | grep -qE '\-s 4\b' \
   && ok "video -q high: scale is 4x" \
   || fail "video -q high: expected -s 4 in command — got: $VDRY_HIGH"
 
-VDRY_UH=$(scripts/upscale-video.sh -q ultrahigh -n test-assets/videos/test-clip.mp4 /tmp/out.mp4 2>/dev/null)
+VDRY_UH=$(scripts/upscale-video.sh -q xhigh -n test-assets/videos/test-clip.mp4 /tmp/out.mp4 2>/dev/null)
 printf '%s' "$VDRY_UH" | grep -q 'realesrgan' \
-  && ok "video -q ultrahigh: dry run uses realesrgan engine" \
-  || fail "video -q ultrahigh: dry run missing realesrgan — got: $VDRY_UH"
+  && ok "video -q xhigh: dry run uses realesrgan engine" \
+  || fail "video -q xhigh: dry run missing realesrgan — got: $VDRY_UH"
 printf '%s' "$VDRY_UH" | grep -qE '\-s 4\b' \
-  && ok "video -q ultrahigh: scale is 4x" \
-  || fail "video -q ultrahigh: expected -s 4 in command — got: $VDRY_UH"
+  && ok "video -q xhigh: scale is 4x" \
+  || fail "video -q xhigh: expected -s 4 in command — got: $VDRY_UH"
 
 # -D / -I / -T flags must be accepted (exit 0) by dry-run.
 assert_exit "video: -D dedup flag accepted (-q low dry run)"            0 \
@@ -1043,6 +1059,23 @@ else
   skip "yosemite-valley 4K landscape inference (run with --integration)"
 fi
 
+# ─── 30b. TUI UNIT TESTS (pure helpers — no GPU, no live app) ───────────────────
+# Runs scripts/test_tui.py under the project venv (Textual lives there, per the
+# `tool` wrapper). Covers progress parsing, sidecar normalization, ETA aggregation,
+# scan defaults, and the key-binding surface. Skips gracefully if Textual is absent.
+_TUI_PY="$PROJECT_ROOT/.venv/bin/python3"
+[ -x "$_TUI_PY" ] || _TUI_PY="python3"
+if "$_TUI_PY" -c "import textual" >/dev/null 2>&1; then
+  if "$_TUI_PY" "$SCRIPT_DIR/test_tui.py" >/tmp/tui-unit.log 2>&1; then
+    ok "tui: unit tests (scripts/test_tui.py)"
+  else
+    fail "tui: unit tests failed — see /tmp/tui-unit.log"
+    tail -20 /tmp/tui-unit.log >&2
+  fi
+else
+  skip "tui: unit tests (Textual not installed — run scripts/setup.sh)"
+fi
+
 # ─── 31–48. TUI MANUAL TEST PLAN ────────────────────────────────────────────────
 #
 # These tests require an interactive terminal and a real GPU.  They are intentionally
@@ -1072,9 +1105,11 @@ fi
 #     • Log pane shows dim "waiting for job…" text.
 #     • ETA bar (second-to-last row) shows:
 #         Total ETA  ≈ <N> m   (<img count> img × ~<t> m  + ...)
-#     • Two-row key bindings footer always visible:
-#         Row 1: [↑↓] navigate  [SPACE] toggle  [a] all  [n] none  [t] invert  [r] retry failed  [f] force redo
-#         Row 2: [s] start  [p] pause/resume  [c] cancel job  [d] change dir  [q] quit
+#     • Two-row key bindings footer always visible, grouped, with explicit key=Action labels:
+#         Row 1: SELECT  ↑↓=Move  Space=Toggle  a=All  n=None  t=Invert  r=Retry  f=Redo
+#         Row 2: RUN     s=Start  p=Pause  c=Cancel  P=Preset  o=Options  d=Dir  ?=Help  q=Quit
+#     • Press [?]: a "Keyboard reference" overlay lists every key with a full
+#       one-line description. Press [?], [Esc], or [q] to close it.
 #
 # ── 32. STARTUP DEFAULT SELECTION ───────────────────────────────────────────────
 #

@@ -13,10 +13,10 @@ if [ -z "${VIDEO2X:-}" ]; then
   fi
 fi
 
-QUALITY=""        # unset = medium; fast|low|medium|high|ultrahigh
+QUALITY=""        # unset = medium; fast|low|medium|high|xhigh
 SCALE=""          # unset = resolved from quality preset
 ENGINE=""         # unset = resolved from quality preset
-NVENC=0           # 1 = re-encode via system ffmpeg h264_nvenc after AI upscale (ultrahigh)
+NVENC=0           # 1 = re-encode via system ffmpeg h264_nvenc after AI upscale (xhigh)
 DEDUP=0           # 1 = pre-filter with mpdecimate to skip duplicate frames
 INTERPOLATE=""    # "2x" = double framerate via RIFE (or ffmpeg minterpolate fallback)
 THERMAL_MODE="balanced"  # conservative|balanced|performance
@@ -34,7 +34,7 @@ usage() {
   printf '        low       ffmpeg lanczos 2x         CPU       ~seconds/clip    no GPU\n'
   printf '        medium    RealCUGAN 2x              Vulkan    ~45 min/30 s    recommended\n'
   printf '        high      Real-ESRGAN 4x            Vulkan    ~2 h/30 s       best quality\n'
-  printf '        ultrahigh Real-ESRGAN 4x            NVENC out ~2 h/30 s       max quality\n'
+  printf '        xhigh Real-ESRGAN 4x            NVENC out ~2 h/30 s       max quality\n'
   printf '\n'
   printf '  -s  override scale factor integer (overrides the -q scale)\n'
   printf '  -e  override engine: realesrgan | realcugan | anime4k (overrides the -q engine)\n'
@@ -76,8 +76,8 @@ OUTPUT=${2:?'OUTPUT required — path for upscaled video'}
 
 # Validate quality
 case ${QUALITY:-medium} in
-  fast|low|medium|high|ultrahigh) ;;
-  *) printf 'QUALITY must be fast, low, medium, high, or ultrahigh, got: %s\n' "$QUALITY" >&2; exit 1 ;;
+  fast|low|medium|high|xhigh) ;;
+  *) printf 'QUALITY must be fast, low, medium, high, or xhigh, got: %s\n' "$QUALITY" >&2; exit 1 ;;
 esac
 
 # Validate thermal mode
@@ -93,13 +93,13 @@ case ${INTERPOLATE:-none} in
 esac
 
 # Apply quality preset; explicit -s / -e override the preset values
-# ultrahigh uses realesrgan 4× AI upscale then NVENC re-encode via system ffmpeg
+# xhigh uses realesrgan 4× AI upscale then NVENC re-encode via system ffmpeg
 case ${QUALITY:-medium} in
   fast)      SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realesrgan_video} ;;
   low)       SCALE=${SCALE:-2}; ENGINE=${ENGINE:-ffmpeg_scale} ;;
   medium)    SCALE=${SCALE:-2}; ENGINE=${ENGINE:-realcugan} ;;
   high)      SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan} ;;
-  ultrahigh) SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan}; NVENC=1 ;;
+  xhigh) SCALE=${SCALE:-4}; ENGINE=${ENGINE:-realesrgan}; NVENC=1 ;;
 esac
 
 # Validate scale

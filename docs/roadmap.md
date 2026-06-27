@@ -17,7 +17,7 @@ Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usabil
 - Test-asset cleanup: zero committed binaries in `test-assets/`; download script generates all fixtures
 - tui-monitor.py retired: removed from upscale-video.sh TTY path, file deleted
 - Throttle warning in TUI: `⚠ THROTTLING` flag when SM clock drops ≥15% at temp ≥85°C
-- `ultrahigh` preset for video: Real-ESRGAN 4× + system h264_nvenc re-encode (`-NVENC=1`)
+- `xhigh` preset for video: Real-ESRGAN 4× + system h264_nvenc re-encode (`-NVENC=1`)
 - `--dedup` / `-D`: mpdecimate frame dedup before inference; framerate restored after
 - `--interpolate 2x` / `-I 2x`: RIFE 2× (or ffmpeg minterpolate fallback)
 - `--thermal-mode` / `-T`: conservative|balanced|performance sleep between phases
@@ -83,16 +83,16 @@ Image and video expose a single `-q` knob. Raw flags (`-s`, `-m`, `-e`, etc.) re
 | `low` | 2× | RealESRGAN_x2plus | no | 256 | Fast; ~¼ VRAM; bulk preview runs |
 | `medium` | 4× | RealESRGAN_x4plus | no | 512 | Default; balanced quality |
 | `high` | 4× | RealESRGAN_x4plus | yes (GFPGAN) | 512 | Best quality for portraits/archival |
-| `ultrahigh` | 4× | RealESRGAN_x4plus | yes | 0 (auto) | Max quality; targets 4K output from HD source |
+| `xhigh` | 4× | RealESRGAN_x4plus | yes | 0 (auto) | Max quality; targets 4K output from HD source |
 
-**Video presets** (extends existing `low/medium/high`, adds `ultrahigh`):
+**Video presets** (extends existing `low/medium/high`, adds `xhigh`):
 
 | Preset | Engine | Scale | Encode | Notes |
 |---|---|---|---|---|
 | `low` | ffmpeg lanczos | 2× | libx264 | CPU only; seconds per clip |
 | `medium` | RealCUGAN | 2× | libx264 | Default; AI-enhanced |
 | `high` | Real-ESRGAN | 4× | libx264 | Best quality |
-| `ultrahigh` | Real-ESRGAN | 4× | NVENC (blocked until NVENC fix below) | Max quality; targets 4K output |
+| `xhigh` | Real-ESRGAN | 4× | NVENC (blocked until NVENC fix below) | Max quality; targets 4K output |
 
 ### Python Textual TUI — progress bars and ETA for all 3 media types
 
@@ -127,7 +127,7 @@ All three scripts write `{output}.progress.json` sidecar (same protocol as v1 vi
 
 - **Test-asset cleanup: zero committed binaries** ✓ done — removed all 14.7 MB from `test-assets/`; download script generates all fixtures (synthetic benchmark images + ffmpeg-generated test-clip.mp4).
 - **TensorRT / PyTorch FP16 backend with frame batching** ✓ stub done — `-e tensorrt` validates PyTorch+CUDA deps, falls back to realesrgan with install guidance. Full FP16 inference path deferred to v3.
-- **NVENC encode** ✓ done — `ultrahigh` preset uses system h264_nvenc (lossless intermediate → nvenc re-encode); `-NVENC=1` flag wired internally. Confirmed system ffmpeg has h264/hevc/av1_nvenc.
+- **NVENC encode** ✓ done — `xhigh` preset uses system h264_nvenc (lossless intermediate → nvenc re-encode); `-NVENC=1` flag wired internally. Confirmed system ffmpeg has h264/hevc/av1_nvenc.
 - **Duplicate-frame skip** ✓ done — `-D` flag: mpdecimate pre-filter, framerate restored post-upscale.
 - **RIFE frame interpolation** ✓ done — `-I 2x` flag: uses RIFE binary if available, falls back to ffmpeg minterpolate.
 - **`--thermal-mode conservative|balanced|performance`** ✓ done — `-T` flag: conservative inserts 5 s sleep between phases; balanced/performance are no-ops.
@@ -139,42 +139,27 @@ All three scripts write `{output}.progress.json` sidecar (same protocol as v1 vi
 
 These are prerequisites for the unified TUI but are small enough to ship early:
 
-1. Add `-q low|medium|high|ultrahigh` to `upscale-image.sh`. ✓ done
+1. Add `-q low|medium|high|xhigh` to `upscale-image.sh`. ✓ done
 2. Build Python Textual TUI app (`tool tui` entry point). ✓ done — `scripts/tui.py`, entry point `tool tui`.
-3. Implement sidecar JSON writer in `upscale-image.sh` and `upscale-video.sh`; implement detach/reattach in TUI. **Not yet started** — see "TUI: what's still needed" below.
+3. Implement sidecar JSON writer in `upscale-image.sh` and `upscale-video.sh`; implement detach/reattach in TUI. ✓ done — see "TUI: status" below.
 
-### TUI: what's still needed
+### TUI: status
 
-The initial TUI (`scripts/tui.py`, `tool tui`) is complete for the core interactive layer: layout, scanning, default selection, per-section buttons, aggregate ETA, all keyboard shortcuts, job execution, progress parsing, GPU polling, and log pane. The following items remain before the spec acceptance criteria are fully met.
+The TUI (`scripts/tui.py`, `tool tui`) is feature-complete for v2. Everything the spec calls for is implemented and unit-tested (`scripts/test_tui.py`, run by `test.sh` section 30b):
 
-**Blocking for reattach / session persistence**
+- **Core interactive layer** ✓ — layout, scanning, default selection (images all-on; first-unprocessed video only), per-section select/unselect buttons, aggregate ETA bar, all keyboard shortcuts, job execution, GPU polling, log pane.
+- **Sidecar writers** ✓ — `upscale-image.sh` (`{stem}.{fmt}.progress.json`) and `upscale-video.sh` (`{output}.progress.json`) write `running`/`done`/`failed` with live `pct`; video adds `fps`/`remaining`.
+- **Reattach / session persistence** ✓ — `_reattach_sidecars()` on mount marks live jobs `▶ active`; `_tick_sidecars()` polls every 5 s for detached jobs. Field normalization (`fps` → `throughput`) is centralized in `normalize_sidecar()`.
+- **Adaptive ETA refinement** ✓ — `_after_job` records actual rate and re-seeds remaining same-type queued items to the running average.
+- **Preset + input-dir interactivity** ✓ — `[P]` cycles preset (re-seeds ETA), `[d]` opens a `DirPrompt` modal to rescan a new root.
+- **Section counts during active job** ✓ — `_refresh_active_panel()` calls `_update_section_counts()`.
+- **`tui-monitor.py` retired** ✓ — deleted; `grep -r 'tui-monitor' scripts/` returns nothing.
 
-- `upscale-image.sh`: add `{output}.progress.json` sidecar writer. Write at job start (`status: running, pct: 0`), update on each "Testing N" line (`pct: N/total * 100`, `throughput: tiles/s`), write on completion (`status: done`) or failure (`status: failed`), then delete on clean exit. Format matches `upscale-audio.sh` stub: `{"status":…,"pct":…,"elapsed_s":…,"input_s":…,"processed_s":…,"throughput_ratio":…}`.
-- `upscale-video.sh`: same sidecar writer. Update on each `frame=N/M` line (`pct`, `fps`, `remaining`); video's existing progress-to-stderr path makes this straightforward.
-- `tui.py` startup: on `on_mount`, after scanning, check each item's `output_path + ".progress.json"`. If it exists and `status == "running"`, mark that item `▶ active` and start polling its sidecar instead of spawning a new subprocess. This is step 5 of the wireframe startup spec.
-- `tui.py` sidecar poller: add a second `set_interval(5, _poll_sidecars)` that reads each active item's sidecar and calls `_refresh_active_panel`. Needed for the detached-process case (job still running from a previous TUI session).
+**Remaining: live validation only (needs GPU).** The progress regexes are unit-tested against captured sample lines but not yet confirmed against live inference output:
 
-**Adaptive ETA refinement**
-
-- `tui.py`: after `_after_job` completes successfully, compute `actual_seconds = time.time() - job_start_time` for that item. Call `item.record_rate(actual_rate)` and then update `est_seconds` on all remaining same-type, same-preset queued items to the running average. The `_rate_sum`/`_rate_n` fields on `MediaItem` are already present; the update logic in `_after_job` is not. The ETA aggregate will then converge across a batch rather than staying fixed at seed values.
-
-**Progress parsing: needs validation against real runs**
-
-- `parse_image_progress()` targets Real-ESRGAN's `Testing N name` and `Tile K/M` stdout lines. These have not been tested against actual inference output. The regexes may need adjustment once a real run is observed — in particular, the tile counter line format may vary between Real-ESRGAN versions.
-- `parse_video_progress()` targets video2x's `frame=N/M (PCT%); fps=X; elapsed=MM:SS; remaining=HH:MM:SS` format (ported from `tui-monitor.py`). The current TUI runs the video script non-interactively (no TTY), which means video2x output goes to stdout without the `tui-monitor.py` intermediary — the raw format needs to be confirmed at least once live before this is trusted.
-
-**Preset and input-dir interactivity**
-
-- The header bar `Preset [medium ▾]` is currently a plain `Static` — not interactive. Add a `Select` widget (or cycle-on-click with `Label`) so the preset can be changed mid-session. When changed: re-apply ETA seeds to all queued items and update the aggregate ETA bar. Any actively-running job keeps its original preset. File: `tui.py` `compose()` and a new `action_change_preset()`.
-- `action_change_dir()` currently rescans the same `_input_dir`. It should prompt for a new path first. Textual has no built-in file picker; the minimal path is an `Input` widget pushed as an inline modal that captures a typed path, then calls `scan_all()` with the new root.
-
-**Section header counts during active job**
-
-- `_refresh_active_panel()` updates the active job panel and ETA bar but does not call `_update_section_counts()`. The "1 active" badge in the section header therefore only updates at job boundaries. Add `self._update_section_counts()` to `_refresh_active_panel()` (one line).
-
-**Retire `tui-monitor.py`**
-
-- `upscale-video.sh` still pipes to `scripts/tui-monitor.py` in TTY mode. Once the Textual TUI is the primary path and the sidecar writers are in place, remove the `tui-monitor.py` pipe from `upscale-video.sh` and delete `tui-monitor.py`. Acceptance: `grep -r 'tui-monitor' scripts/` returns nothing.
+- `parse_image_progress()` targets Real-ESRGAN's `Testing N name` / `Tile K/M` stdout — tile-counter format may vary between versions.
+- `parse_video_progress()` targets video2x's `frame=N/M … fps=X … remaining=HH:MM:SS`. The TUI runs the video script non-interactively (no TTY), so confirm the raw stdout format once live.
+- Run the manual TUI test plan (sections 31–48 in `test.sh`) before tagging v2.
 
 ### Tradeoffs considered
 
@@ -202,6 +187,8 @@ The initial TUI (`scripts/tui.py`, `tool tui`) is complete for the core interact
 | Hardware profile lookup (`perf-estimate.py`) | ±50 % | Instant | Seed only |
 | Calibration probe (30 frames, v1) | ±20 % | ~30 s overhead | Replaces seed when available |
 | **Adaptive live** | Converges to ±10 % within first 5 % | Instant (profile seed) | **Chosen for TUI** |
+
+> **Multi-platform port (in progress, 2026-06-25):** see [omarchy-port.md](omarchy-port.md) — change log for the Mac/Ubuntu/WSL2/Omarchy targets plus the **open question** of which image-inference/dependency stack is objectively best (the PyTorch+basicsr path is the main portability blocker). Must be resolved before locking the v3 stack.
 
 ## v3.0 — Rust rewrite (primary goal: speed)
 

@@ -35,7 +35,7 @@ Full item lists and exit criteria: [`docs/roadmap.md`](docs/roadmap.md)
 | `s` | Start batch |
 | `p` | Pause / resume active job |
 | `c` | Cancel active job |
-| `P` | Cycle quality preset (low → medium → high → ultrahigh) |
+| `P` | Cycle quality preset (low → medium → high → xhigh) |
 | `o` | Options — set scale, model, format, tile, face, engine overrides |
 | `d` | Change input directory |
 | `q` | Quit |
@@ -125,6 +125,11 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 - CLI-first: no GUI dependencies; every tool composable via shell
 - Fail fast: all boundary validation at script entry; errors to stderr with non-zero exit
 - Model-agnostic: wrappers accept any `.pth` file path; no model names hardcoded in logic
+
+## TODO
+- **Test setup/teardown should leave only images for visual review.** After a run, `output/` keeps `.progress.json` and `.audit.json` sidecars beside the media; `teardown.sh` only clears `output/images/test-results/`. Add a sweep (or have scripts delete `.progress.json` on clean exit) so the only generated artifacts left to eyeball are the images themselves (png/jpg/webp).
+- **Keyboard preset picker (deferred).** `P` currently cycles `low → medium → high → xhigh` (works, discoverable via footer + log). A `PresetModal` number-key picker was built but reverted: it renders on open yet throws `AttributeError: 'str' object has no attribute 'render_strips'` on a later/teardown render under Textual 8.2.7 (Help/Options/Dir modals are unaffected — root cause not yet isolated). Revisit when the TUI snapshot harness below lands, or after a Textual bump.
+- **Investigate a high-fidelity TUI test harness.** Current TUI coverage is unit-level (`scripts/test_tui.py`: pure helpers + headless `run_test` smoke) plus a manual plan in `test.sh` (§31–48). Evaluate snapshot/interaction harnesses to catch visual + reactive regressions automatically: `pytest-textual-snapshot` (SVG snapshot diffs), Textual `Pilot` (scripted key/click drives), and terminal-capture tools (e.g. `tuitest`/`pexpect`). Goal: assert "every action produces a visible reaction" (rules.md #10) in CI without a GPU.
 
 ## Out of scope
 - Cloud upscaling services
