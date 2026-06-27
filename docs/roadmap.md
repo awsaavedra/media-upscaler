@@ -190,6 +190,19 @@ The TUI (`scripts/tui.py`, `tool tui`) is feature-complete for v2. Everything th
 
 > **Multi-platform port (in progress, 2026-06-25):** see [omarchy-port.md](omarchy-port.md) — change log for the Mac/Ubuntu/WSL2/Omarchy targets plus the **open question** of which image-inference/dependency stack is objectively best (the PyTorch+basicsr path is the main portability blocker). Must be resolved before locking the v3 stack.
 
+### Supported operating systems — test status
+
+What has actually been run, not what is assumed to work. Only Omarchy has been exercised end-to-end; everything else is **untested** until someone runs `./scripts/setup.sh && ./scripts/test.sh` on that target and records the result here.
+
+| OS / target | setup.sh | test.sh (fast) | GPU inference | TUI (manual) | Status |
+|---|---|---|---|---|---|
+| **Omarchy (Arch)** | ✅ | ✅ green | ✅ RealCUGAN 2× verified | 🟡 live video-progress check pending | 🟡 in progress — primary dev box |
+| **Ubuntu 24.04** | ❓ | ❓ | ❓ | ❓ | ⬜ untested |
+| **WSL2 (Ubuntu 24.04)** | ❓ | ❓ | ❓ | ❓ | ⬜ untested |
+| **macOS** | ❓ | ❓ | ❓ | ❓ | ⬜ untested — known blockers: video2x AppImage is Linux-only (needs brew/source NCNN front-end); torch cu118 wheels N/A on Apple Silicon |
+
+Legend: ✅ verified · 🟡 in progress · ⬜ untested · ❓ unknown (not yet run). Update a row only after running the suite on that OS — do not promote to ✅ on assumption.
+
 ## v3.0 — Rust rewrite (primary goal: speed)
 
 Exit criteria: reference job measurably faster than v2 on identical hardware; full feature parity; all integration tests pass against the Rust binary; Python scripts retired.
