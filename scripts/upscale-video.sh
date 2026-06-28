@@ -419,7 +419,7 @@ _AUDIT_JOB_START=$SECONDS
 _SIDECAR=""
 if [ "$ENGINE" != "ffmpeg_scale" ]; then
   _SIDECAR="${OUTPUT}.progress.json"
-  printf '{"status":"running","pct":0,"fps":"0","remaining":""}\n' > "$_SIDECAR"
+  printf '{"status":"running","pct":0,"fps":"0","remaining":"","pid":%d}\n' "$$" > "$_SIDECAR"
 fi
 
 _write_sidecar_vid() {
@@ -490,8 +490,8 @@ else
         _fps=$(printf '%s' "$_clean" | grep -oE 'fps=[0-9.]+' | cut -d= -f2)
         _rem=$(printf '%s' "$_clean" | grep -oE 'remaining=[^ ;]+' | cut -d= -f2)
         [ -n "$_tot" ] && [ "$_tot" -gt 0 ] && _pct=$((_cur * 100 / _tot)) || _pct=0
-        printf '{"status":"running","pct":%d,"fps":"%s","remaining":"%s"}\n' \
-          "$_pct" "${_fps:-0}" "${_rem:-}" > "$_SIDECAR" ;;
+        printf '{"status":"running","pct":%d,"fps":"%s","remaining":"%s","pid":%d}\n' \
+          "$_pct" "${_fps:-0}" "${_rem:-}" "$$" > "$_SIDECAR" ;;
     esac
   done
   _ec=${PIPESTATUS[0]}

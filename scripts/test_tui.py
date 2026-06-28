@@ -10,6 +10,7 @@ interactive App is exercised separately by the manual TUI test plan in test.sh.
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 import unittest
@@ -252,6 +253,146 @@ class PresetControl(unittest.TestCase):
         for media in ("image", "video"):
             self.assertIn("xhigh", tui._ETA_SEEDS[media])
             self.assertNotIn("ultrahigh", tui._ETA_SEEDS[media])
+
+
+class SectionSurface(unittest.IsolatedAsyncioTestCase):
+    """All three media types must appear as section headers, each with its icon.
+    Audio is shown but inactive (greyed, no select/start controls)."""
+
+    def test_icon_map_covers_all_three_types(self) -> None:
+        for mtype in ("image", "video", "audio"):
+            self.assertIn(mtype, tui._SEC_ICONS)
+            self.assertTrue(tui._SEC_ICONS[mtype])
+
+    async def test_audio_section_present_and_inactive(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            app = tui.MediaRestoreApp(input_dir=Path(d))
+            async with app.run_test():
+                headers = {h._mtype: h for h in app.query(tui.SectionHeader)}
+                self.assertEqual(set(headers), {"image", "video", "audio"})
+                self.assertTrue(headers["audio"]._inactive)
+                self.assertFalse(headers["image"]._inactive)
+                self.assertTrue(headers["audio"].has_class("inactive"))
+                # Inactive section exposes no select/unselect controls.
+                self.assertEqual(len(app.query("#sel-audio")), 0)
+                self.assertEqual(len(app.query("#unsel-audio")), 0)
+
+
+class JobLiveness(unittest.TestCase):
+    """A 'running' sidecar left by a dead/finished job must be recognized as
+    stale so the item is not stuck '▶ active' forever. PID liveness is
+    authoritative; mtime freshness is the fallback for legacy (pid-less) files.
+    """
+
+    def _dead_pid(self) -> int:
+        import subprocess
+        p = subprocess.Popen(["true"])
+        p.wait()  # reaped — pid is now free
+        return p.pid
+
+    def test_pid_alive_true_for_self(self) -> None:
+        self.assertTrue(tui._pid_alive(os.getpid()))
+
+    def test_pid_alive_false_for_dead(self) -> None:
+        self.assertFalse(tui._pid_alive(self._dead_pid()))
+
+    def test_dead_pid_overrides_fresh_mtime(self) -> None:
+        data = {"status": "running", "pid": self._dead_pid()}
+        self.assertFalse(tui.sidecar_job_alive(data, time.time(), time.time()))
+
+    def test_live_pid_overrides_old_mtime(self) -> None:
+        data = {"status": "running", "pid": os.getpid()}
+        self.assertTrue(tui.sidecar_job_alive(data, time.time() - 9999, time.time()))
+
+    def test_legacy_old_sidecar_is_stale(self) -> None:
+        data = {"status": "running"}  # no pid
+        self.assertFalse(tui.sidecar_job_alive(data, time.time() - 9999, time.time()))
+
+    def test_legacy_fresh_sidecar_is_alive(self) -> None:
+        data = {"status": "running"}  # no pid
+        self.assertTrue(tui.sidecar_job_alive(data, time.time() - 2, time.time()))
+
+
+class FindCompletedOutput(unittest.TestCase):
+    """Real-ESRGAN writes '{stem}_out.{ext}', not '{stem}.{ext}'. Output
+    detection must match the real file or finished jobs look unprocessed."""
+
+    def test_matches_out_suffix(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "foo.png"
+            (Path(d) / "foo_out.png").write_bytes(b"\x00")
+            item = tui.MediaItem(path=Path("/in/foo.png"), media_type="image",
+                                 output_path=out)
+            self.assertEqual(tui.find_completed_output(item).name, "foo_out.png")
+
+    def test_matches_exact_name_for_video(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "clip.mp4"
+            out.write_bytes(b"\x00")
+            item = tui.MediaItem(path=Path("/in/clip.mp4"), media_type="video",
+                                 output_path=out)
+            self.assertEqual(tui.find_completed_output(item), out)
+
+    def test_none_when_absent(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            item = tui.MediaItem(path=Path("/in/foo.png"), media_type="image",
+                                 output_path=Path(d) / "foo.png")
+            self.assertIsNone(tui.find_completed_output(item))
+
+
+class ZombieActiveReconcile(unittest.IsolatedAsyncioTestCase):
+    """Repro for the 'sample-gradient.png stuck ▶ active' bug: a stale 'running'
+    sidecar from a dead job must reconcile on startup, not stick active."""
+
+    def _seed(self, root: Path, *, make_output: bool, age: float, pid=None) -> None:
+        import json as _json
+        (root / "input" / "images").mkdir(parents=True)
+        (root / "input" / "images" / "foo.png").write_bytes(b"\x00")
+        outdir = root / "output" / "images"
+        outdir.mkdir(parents=True)
+        if make_output:
+            (outdir / "foo_out.png").write_bytes(b"\x00")  # _out suffix
+        side = outdir / "foo.png.progress.json"
+        payload = {"status": "running", "pct": 100}
+        if pid is not None:
+            payload["pid"] = pid
+        side.write_text(_json.dumps(payload))
+        os.utime(side, (time.time() - age, time.time() - age))
+
+    async def _item(self, root: Path) -> tui.MediaItem:
+        app = tui.MediaRestoreApp(input_dir=root / "input", output_dir=root / "output")
+        async with app.run_test():
+            return next(i for i in app._items if i.path.name == "foo.png")
+
+    async def test_finished_job_reconciles_to_done(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._seed(root, make_output=True, age=3600)
+            item = await self._item(root)
+            self.assertEqual(item.status, "done")
+
+    async def test_crashed_job_without_output_resets_to_queued(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._seed(root, make_output=False, age=3600)
+            item = await self._item(root)
+            self.assertNotEqual(item.status, "active")
+
+    async def test_genuinely_live_detached_job_stays_active(self) -> None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            # fresh sidecar, our own (live) pid -> a real running detached job
+            self._seed(root, make_output=False, age=1, pid=os.getpid())
+            item = await self._item(root)
+            self.assertEqual(item.status, "active")
 
 
 class ActivePanelLiveness(unittest.IsolatedAsyncioTestCase):

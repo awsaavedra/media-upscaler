@@ -137,8 +137,9 @@ done
 # JPEG artifact LR — bicubic 4× downscale of flower-foliage GT then Q20 JPEG compression.
 # Kept separate from LR_PAIRS because the extra -quality flag cannot go in the generic loop.
 # Portrait LR — must be saved as 3-channel RGB so GFPGAN's face-paste code works.
-# ImageMagick preserves single-channel grayscale regardless of -type TrueColor on input;
-# PIL .convert('RGB') forces 3 channels before resizing.
+# ImageMagick's PNG24: prefix forces 3-channel RGB output even from a grayscale source,
+# and -colorspace sRGB normalises tone; avoids a system Pillow dependency (not present on
+# Omarchy's Python 3.14). Width 198 (4× of the ~792px GT face crop), bicubic resample.
 PORTRAIT_LR="$IMG_DIR/demo/douglas-portrait-lr198.png"
 PORTRAIT_GT="$IMG_DIR/demo/gt/douglas-portrait.jpg"
 if [ -f "$PORTRAIT_LR" ]; then
@@ -147,17 +148,11 @@ elif [ ! -f "$PORTRAIT_GT" ]; then
   [ "$CHECK_ONLY" -eq 0 ] && printf '[SKIP] %s — GT not present\n' "$(basename "$PORTRAIT_LR")"
 else
   [ "$CHECK_ONLY" -eq 0 ] && dl "Creating $(basename "$PORTRAIT_LR") (RGB-forced, bicubic 4×)…"
-  python3 - "$PORTRAIT_GT" "$PORTRAIT_LR" <<'EOF'
-import sys
-from PIL import Image
-src, dst = sys.argv[1], sys.argv[2]
-img = Image.open(src).convert('RGB')
-w, h = img.size
-new_w = 198
-new_h = round(h * new_w / w)
-img.resize((new_w, new_h), Image.BICUBIC).save(dst)
-EOF
-  ok "$(basename "$PORTRAIT_LR") (created)"
+  command -v magick >/dev/null 2>&1 \
+    || { printf '[ERR]  imagemagick (magick) required for portrait LR creation\n' >&2; exit 1; }
+  magick "$PORTRAIT_GT" -colorspace sRGB -filter Cubic -resize 198x "PNG24:$PORTRAIT_LR" \
+    && ok "$(basename "$PORTRAIT_LR") (created)" \
+    || { printf '[ERR]  magick failed for %s\n' "$(basename "$PORTRAIT_LR")" >&2; exit 1; }
 fi
 
 JPEG_LR="$IMG_DIR/demo/flower-foliage-lr540-q20.jpg"

@@ -14,6 +14,8 @@ test-assets/output/
 # Directory structure preserved via .gitkeep; see test-assets/.gitignore for details.
 
 # Python
+.venv/
+venv/
 __pycache__/
 *.pyc
 *.pyo

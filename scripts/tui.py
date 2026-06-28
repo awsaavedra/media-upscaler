@@ -115,6 +115,63 @@ def _mtime_str(p: Path) -> str:
     return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
 
 
+# Output-file detection. Real-ESRGAN writes "{stem}_out.{ext}", video writes the
+# exact "{name}". Sidecar/progress paths key off the bare "{stem}", so a finished
+# image looks unprocessed unless we also probe the "_out" variant.
+_OUT_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mkv", ".mov", ".webm", ".avi")
+
+
+def find_completed_output(item: MediaItem) -> Path | None:
+    """Real on-disk output for an item, matching the bare name or the Real-ESRGAN
+    '_out' suffix. Returns None if nothing is present yet."""
+    base = item.output_path
+    if base.exists():
+        return base
+    out_dir = base.parent
+    if not out_dir.is_dir():
+        return None
+    stem = base.stem
+    for ext in _OUT_EXTS:
+        cand = out_dir / f"{stem}_out{ext}"
+        if cand.exists():
+            return cand
+    return None
+
+
+# Liveness for "running" sidecars. A job that died uncleanly (TUI closed mid-run,
+# crash, kill) leaves its last "running" file on disk; without a liveness check the
+# TUI trusts it forever and the item is stuck "▶ active" (the gradient zombie).
+SIDECAR_STALE_SECS = 90.0
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True   # exists, owned by another user
+    except OSError:
+        return False
+    return True
+
+
+def sidecar_job_alive(
+    data: dict, sidecar_mtime: float, now: float,
+    stale_secs: float = SIDECAR_STALE_SECS,
+) -> bool:
+    """Is the process that wrote this 'running' sidecar still alive? PID liveness
+    is authoritative when present; otherwise fall back to mtime freshness for
+    legacy (pid-less) sidecars — a live job rewrites its sidecar every frame/file."""
+    pid = data.get("pid")
+    if pid is not None:
+        try:
+            return _pid_alive(int(pid))
+        except (TypeError, ValueError):
+            pass
+    return (now - sidecar_mtime) <= stale_secs
+
+
 def scan_images(
     preset: str,
     input_dir: Path = INPUT_DIR,
@@ -133,9 +190,10 @@ def scan_images(
         out_dir = dst / rel.parent
         out = _find_output(p.stem, out_dir) or (out_dir / (p.stem + ".png"))
         item = MediaItem(path=p, media_type="image", output_path=out, est_seconds=est)
-        if out.exists():
+        real = find_completed_output(item)
+        if real is not None:
             item.status = "done"
-            item.done_mtime = _mtime_str(out)
+            item.done_mtime = _mtime_str(real)
         items.append(item)
     return items
 
@@ -157,9 +215,10 @@ def scan_video(
             continue
         out = dst / p.name
         item = MediaItem(path=p, media_type="video", output_path=out, est_seconds=est)
-        if out.exists():
+        real = find_completed_output(item)
+        if real is not None:
             item.status = "done"
-            item.done_mtime = _mtime_str(out)
+            item.done_mtime = _mtime_str(real)
         else:
             item.selected = first_unfinished
             first_unfinished = False
@@ -407,31 +466,48 @@ class ChecklistRow(Widget):
         self.refresh()
 
 
+# Row-header icons per media type: picture, video, audio.
+_SEC_ICONS = {"image": "🖼", "video": "🎬", "audio": "🎵"}
+
 _SEC_CSS = """
 SectionHeader {
     height: 2;
     background: $panel-darken-2;
     padding: 0 1;
 }
-.sec-label { width: auto; margin-right: 2; }
-.sec-count { width: 1fr; color: $text-muted; }
-.sec-btn   { height: 1; min-width: 14; border: none; background: $surface; margin-right: 1; }
+SectionHeader.inactive { background: $panel-darken-3; }
+SectionHeader.inactive .sec-label { color: $text-disabled; }
+.sec-label    { width: auto; margin-right: 2; }
+.sec-count    { width: 1fr; color: $text-muted; }
+.sec-inactive { width: 1fr; color: $text-disabled; text-style: italic; }
+.sec-btn      { height: 1; min-width: 14; border: none; background: $surface; margin-right: 1; }
 """
 
 
 class SectionHeader(Horizontal):
-    def __init__(self, title: str, media_type: str) -> None:
+    def __init__(self, title: str, media_type: str, inactive: bool = False) -> None:
         super().__init__()
         self._title = title
         self._mtype = media_type
+        self._inactive = inactive
+        if inactive:
+            self.add_class("inactive")
 
     def compose(self) -> ComposeResult:
-        yield Label(f"── {self._title}", classes="sec-label")
+        icon = _SEC_ICONS.get(self._mtype, "")
+        yield Label(f"── {icon}  {self._title}", classes="sec-label")
+        if self._inactive:
+            # Greyed, no select/start controls — section is not yet usable.
+            yield Label("inactive — audio upscaling not yet available",
+                        classes="sec-inactive")
+            return
         yield Label("", id=f"sec-count-{self._mtype}", classes="sec-count")
         yield Button("select all",   id=f"sel-{self._mtype}",   classes="sec-btn")
         yield Button("unselect all", id=f"unsel-{self._mtype}", classes="sec-btn")
 
     def update_counts(self, items: list[MediaItem]) -> None:
+        if self._inactive:
+            return
         text = section_counts([i for i in items if i.media_type == self._mtype])
         try:
             self.query_one(f"#sec-count-{self._mtype}", Label).update(text)
@@ -795,10 +871,11 @@ class MediaRestoreApp(App):
 
     BINDINGS = build_bindings()  # generated from _KEYMAP — see the Keymap section
 
-    def __init__(self, input_dir: Path = INPUT_DIR, preset: str = "medium") -> None:
+    def __init__(self, input_dir: Path = INPUT_DIR, preset: str = "medium",
+                 output_dir: Path = OUTPUT_DIR) -> None:
         super().__init__()
         self._input_dir = input_dir
-        self._output_dir = OUTPUT_DIR
+        self._output_dir = output_dir
         self._preset = preset
         self._items: list[MediaItem] = []
         self._cursor: int = 0
@@ -825,6 +902,8 @@ class MediaRestoreApp(App):
                 yield Vertical(id="img-list")
                 yield SectionHeader("Video", "video")
                 yield Vertical(id="vid-list")
+                yield SectionHeader("Audio", "audio", inactive=True)
+                yield Vertical(id="aud-list")
             with Vertical(id="right-col"):
                 yield ActiveJobPanel(id="active-job")
                 yield GpuPanel("Polling GPU…", id="gpu-panel")
@@ -907,13 +986,30 @@ class MediaRestoreApp(App):
             try:
                 data = json.loads(sidecar.read_text())
                 if data.get("status") == "running":
-                    item.status = "active"
-                    item.pct = int(data.get("pct", 0))
+                    if sidecar_job_alive(data, sidecar.stat().st_mtime, time.time()):
+                        item.status = "active"
+                        item.pct = int(data.get("pct", 0))
+                    else:
+                        # Dead/finished job left a stale 'running' file — reconcile.
+                        self._reconcile_dead(item)
                     changed = True
             except Exception:
                 pass
         if changed:
             self._update_ui()
+
+    def _reconcile_dead(self, item: MediaItem) -> None:
+        """A 'running' sidecar whose job is no longer alive: mark done if the
+        output landed, else reset to queued so it can re-run. Never leave active."""
+        real = find_completed_output(item)
+        if real is not None:
+            item.status = "done"
+            item.done_mtime = _mtime_str(real)
+        else:
+            item.status = "queued"
+            item.pct = 0
+        item.throughput_str = ""
+        item.eta_str = ""
 
     def _tick_sidecars(self) -> None:
         """Poll progress sidecars for items active from a previous session."""
@@ -925,12 +1021,7 @@ class MediaRestoreApp(App):
                 continue
             sidecar = Path(str(item.output_path) + ".progress.json")
             if not sidecar.exists():
-                if item.output_path.exists():
-                    item.status = "done"
-                    item.done_mtime = _mtime_str(item.output_path)
-                else:
-                    item.status = "queued"
-                    item.pct = 0
+                self._reconcile_dead(item)
                 changed = True
                 continue
             try:
@@ -943,6 +1034,10 @@ class MediaRestoreApp(App):
                 elif status == "failed":
                     item.status = "failed"
                     item.error_msg = str(data.get("error", "script error"))
+                    changed = True
+                elif not sidecar_job_alive(data, sidecar.stat().st_mtime, time.time()):
+                    # Sidecar still says 'running' but the job is gone — reconcile.
+                    self._reconcile_dead(item)
                     changed = True
                 else:
                     norm = normalize_sidecar(data)

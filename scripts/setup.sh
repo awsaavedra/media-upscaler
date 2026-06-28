@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Installs video2x and Real-ESRGAN into tools/ within this repository.
-# Usage: ./scripts/setup.sh
+#
+# Usage:  ./scripts/setup.sh        (no sudo, no system packages)
+#
+# Self-contained / in-directory: torch + Real-ESRGAN live in an isolated venv under tools/,
+# built on a project-local Python 3.12 (provisioned via mise/uv) so the proven cu118 wheels
+# install cleanly. We deliberately avoid the system Python — modern distros ship 3.13/3.14,
+# where (a) cu118 wheels don't publish and (b) basicsr's setup.py breaks on the PEP 667
+# locals() change. Same path works identically on Mac/Ubuntu/WSL2/Omarchy. See docs/omarchy-port.md.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,13 +23,45 @@ VIDEO2X_URL="https://github.com/k4yt3x/video2x/releases/download/${VIDEO2X_VERSI
 log() { printf '[setup] %s\n' "$*"; }
 die() { printf '[setup] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# Resolve a CPython 3.12 interpreter without touching the system. Order: existing python3.12
+# on PATH → mise-managed → uv-managed. Prints the interpreter path on stdout. 3.12 is required
+# because cu118 torch wheels stop at 3.12 and basicsr's setup.py breaks on 3.13+ (PEP 667).
+PY312=""
+ensure_python312() {
+  local py=""
+  # mise first, via its DIRECT install path — not `command -v python3.12`, which resolves to
+  # a mise shim that errors ("No version is set") unless a version is activated in this dir.
+  if command -v mise >/dev/null 2>&1; then
+    log "Provisioning Python 3.12 via mise (user-space, no sudo)..." >&2
+    mise install -y python@3.12 >&2 2>&1 || true
+    local d; d="$(mise where python@3.12 2>/dev/null || true)"
+    [ -n "$d" ] && [ -x "$d/bin/python3.12" ] && py="$d/bin/python3.12"
+  fi
+  if [ -z "$py" ] && command -v uv >/dev/null 2>&1; then
+    log "Provisioning Python 3.12 via uv (user-space, no sudo)..." >&2
+    uv python install 3.12 >&2 2>&1 || true
+    py="$(uv python find 3.12 2>/dev/null || true)"
+  fi
+  # Fall back to a real (non-shim) system python3.12.
+  if [ -z "$py" ]; then
+    local sys; sys="$(command -v python3.12 || true)"
+    [ -n "$sys" ] && py="$sys"
+  fi
+  # Must be a working interpreter (a dangling shim fails --version and is rejected here).
+  [ -n "$py" ] && "$py" --version >/dev/null 2>&1 \
+    || die "no working Python 3.12 — install mise or uv, or a system python3.12"
+  PY312="$py"
+}
+
 check_prerequisites() {
   log "Checking prerequisites..."
   nvidia-smi >/dev/null 2>&1         || die "nvidia-smi not found — NVIDIA driver required"
-  command -v ffmpeg  >/dev/null 2>&1 || die "ffmpeg not found — install: sudo apt install ffmpeg"
-  command -v ffprobe >/dev/null 2>&1 || die "ffprobe not found — install: sudo apt install ffmpeg"
+  command -v ffmpeg  >/dev/null 2>&1 || die "ffmpeg not found"
+  command -v ffprobe >/dev/null 2>&1 || die "ffprobe not found"
   command -v python3 >/dev/null 2>&1 || die "python3 not found"
   command -v git     >/dev/null 2>&1 || die "git not found"
+  command -v magick  >/dev/null 2>&1 || command -v convert >/dev/null 2>&1 \
+    || die "imagemagick not found"
   log "python3 $(python3 --version), ffmpeg $(ffmpeg -version 2>&1 | awk 'NR==1{print $3}')"
 }
 
@@ -88,15 +127,10 @@ install_realesrgan() {
     return
   fi
 
-  # PyTorch wheels exist for 3.8–3.12; use system python3.12 if mise injected a newer version
-  local python_bin
-  if /usr/bin/python3.12 -c "import sys; assert sys.version_info[:2] <= (3,12)" 2>/dev/null; then
-    python_bin=/usr/bin/python3.12
-  else
-    python_bin=python3
-  fi
-  log "Creating Python venv with $($python_bin --version)..."
-  "$python_bin" -m venv "$REALESRGAN_DIR/venv"
+  # Isolated, in-directory venv on project-local Python 3.12 (cu118 wheels + basicsr both work).
+  ensure_python312
+  log "Creating Python venv with $("$PY312" --version) at $REALESRGAN_DIR/venv..."
+  "$PY312" -m venv "$REALESRGAN_DIR/venv"
 
   # Use oldest available cu118 wheel for Python 3.12 (2.2.0); basicsr patched below
   log "Installing PyTorch 2.2.0 + torchvision 0.17.0 (cu118)..."
@@ -112,9 +146,11 @@ install_realesrgan() {
   log "Installing Real-ESRGAN package (editable)..."
   "$REALESRGAN_DIR/venv/bin/pip" install --quiet -e "$REALESRGAN_DIR"
 
-  # Downgrade numpy after all deps: basicsr/torch 2.2 compiled extensions fail with numpy 2.x
-  log "Pinning numpy<2 (downgrade to 1.x)..."
-  "$REALESRGAN_DIR/venv/bin/pip" install --quiet "numpy<2"
+  # Downgrade numpy after all deps: basicsr/torch 2.2 compiled extensions fail with numpy 2.x.
+  # Pin scipy<1.13 in lockstep — newer scipy (pulled transitively by basicsr) is built for
+  # numpy 2.x and uses np.long (removed in numpy 1.24–1.26), so it crashes against numpy<2.
+  log "Pinning numpy<2 + scipy<1.13 (coherent numpy-1.x set)..."
+  "$REALESRGAN_DIR/venv/bin/pip" install --quiet "numpy<2" "scipy<1.13"
 
   patch_basicsr_compatibility
 }

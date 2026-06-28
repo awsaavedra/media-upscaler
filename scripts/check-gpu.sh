@@ -62,9 +62,18 @@ fi
 
 if [ -n "$VIDEO2X" ] && [ -x "$VIDEO2X" ]; then
   V2X_DEVICES=$("$VIDEO2X" --help 2>&1 | grep -i vulkan || true)
-  # Check Vulkan ICD is present for NVIDIA
-  if ldconfig -p 2>/dev/null | grep -q nvidia_icd || \
-     find /usr/share/vulkan/icd.d /etc/vulkan/icd.d 2>/dev/null | grep -qi nvidia; then
+  # Check a Vulkan ICD is present for NVIDIA. Scan only dirs that exist: `find` on a missing
+  # operand exits non-zero, which under `set -o pipefail` masks a successful grep match (the
+  # ICD dir layout varies by distro — /etc/vulkan/icd.d is absent on Omarchy/Arch).
+  _icd_found=0
+  for _d in /usr/share/vulkan/icd.d /etc/vulkan/icd.d /usr/local/share/vulkan/icd.d; do
+    [ -d "$_d" ] || continue
+    if find "$_d" -iname '*nvidia*' 2>/dev/null | grep -qi nvidia; then _icd_found=1; break; fi
+  done
+  if [ "$_icd_found" -eq 0 ] && ldconfig -p 2>/dev/null | grep -q 'libGLX_nvidia'; then
+    _icd_found=1
+  fi
+  if [ "$_icd_found" -eq 1 ]; then
     ok "Vulkan NVIDIA ICD present (video2x GPU acceleration available)"
   else
     fail "No NVIDIA Vulkan ICD found — video2x will fall back to CPU"

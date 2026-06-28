@@ -178,12 +178,14 @@ _SIDECAR=""
 if [ "$BATCH" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
   _STEM=$(basename "${INPUT%.*}")
   _SIDECAR="$OUTPUT/${_STEM}.${FORMAT}.progress.json"
-  printf '{"status":"running","pct":0,"elapsed_s":0}\n' > "$_SIDECAR"
+  printf '{"status":"running","pct":0,"elapsed_s":0,"pid":%d}\n' "$$" > "$_SIDECAR"
 fi
 
+# pid lets the TUI detect a dead job: a stale "running" sidecar whose pid is gone
+# is reconciled instead of being trusted forever (zombie "active" rows).
 _write_sidecar_img() {
   [ -z "$_SIDECAR" ] && return 0
-  printf '{"status":"%s","pct":%d,"elapsed_s":%d}\n' "$1" "$2" "$SECONDS" > "$_SIDECAR"
+  printf '{"status":"%s","pct":%d,"elapsed_s":%d,"pid":%d}\n' "$1" "$2" "$SECONDS" "$$" > "$_SIDECAR"
 }
 
 # Progress bar — active when a terminal is attached; passes raw output through otherwise.
