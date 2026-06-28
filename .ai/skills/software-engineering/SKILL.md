@@ -8,8 +8,6 @@ when_to_use: Writing, refactoring, or designing code. Apply design automatically
 
 ## Design
 
-Apply clean code principles automatically when writing or reviewing code.
-
 ### Rules
 - **Names:** Exact. Verbs→functions, nouns→classes. No abbreviations, no magic numbers.
 - **Functions:** One thing. ≤3 args (else object). No side effects. No flag args. ≤20 lines.
@@ -41,8 +39,6 @@ Build seams — places where behavior can be swapped without editing the caller 
 
 ## CLI / DevEx
 
-Rules for command-line interfaces and developer tooling.
-
 ### Rules
 - **POSIX-compliant.** Single-char `-v`, long-form `--verbose`. No Windows-only conventions.
 - **Pipeline-friendly.** stdin/stdout first. Zero interactive prompts; no graphical dependencies.
@@ -59,4 +55,5 @@ Rules for command-line interfaces and developer tooling.
 - **Exact paths and decisions.** File paths, architectural choices, removed dependencies — all explicit.
 - **Atomic updates.** Docs update in the same commit as the code change. Never lag.
 - **No historical archaeology.** Remove outdated content; don't append corrections to stale text.
+- **No volatile enumerations.** Counts and exhaustive lists of growing collections go stale silently; reference the source or omit the count.
 - **Commit messages:** `#type, what; what; what` — type is the intent (add/fix/doc/refactor/stabilize/edit), clauses are semicolon-separated, no Co-Authored-By.

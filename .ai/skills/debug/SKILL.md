@@ -7,7 +7,7 @@ when_to_use: Any code change responding to a bug or unexpected behavior. Auto-en
 # Debug
 
 ## Mode
-- `/debug` (auto, default) — invocation IS the approval. Run `/compact`, apply fix, add guard test, modify lint/CI without prompting. Phase 4 attempt 3+ still requires human.
+- `/debug` (auto, default) — invocation IS the approval. Compact/summarize context (e.g. `/compact` in Claude Code), apply fix, add guard test, modify lint/CI without prompting. Phase 4 attempt 3+ still requires human.
 - `/debug ask` — propose mutating actions; user confirms each. Read-only inspection, diagnostic logging, and test runs proceed without prompts in either mode.
 
 ## Iron Laws
@@ -33,7 +33,7 @@ ANY unexpected event → STOP changes (errors compound; bug at step 3 makes 4–
 
 **Minimal repro.** Smallest code/data/env that still triggers — eliminates false hypotheses, confirms scope.
 
-**Long session.** Many tool calls / large reads / multiple failed attempts → run `/compact` (auto) or propose it (ask) before continuing. Context decay causes missed details and repeated mistakes.
+**Long session.** Many tool calls / large reads / multiple failed attempts → compact/summarize the context (auto; e.g. `/compact` in Claude Code) or propose it (ask) before continuing. Context decay causes missed details and repeated mistakes.
 
 ## Phase 2 — Pattern Analysis
 Contrast before any hypothesis:

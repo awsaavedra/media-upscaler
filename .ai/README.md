@@ -42,13 +42,13 @@ Where a tool lacks native support, keep the file in `.ai/` anyway — documents 
 
 ## In this repo
 
-[`rules.md`](rules.md) holds cross-cutting AI rules for every project. [`skills/`](skills/) implements the six reusable skill clusters below — drop them into any project's `.ai/skills/` or symlink into `.claude/skills/` per the tool mapping above. The directory layout above is a **template** — apply per-project as needed.
+[`rules.md`](rules.md) holds the cross-cutting AI rules (0–7) for every project; [`readme-template.md`](readme-template.md) is the repo-README skeleton plus high-impact rule examples for scaffolding a new project's docs. [`skills/`](skills/) implements the reusable skill clusters cataloged below — drop them into any project's `.ai/skills/` or symlink into `.claude/skills/` per the tool mapping above. The directory layout above is a **template** — apply per-project as needed.
 
 ## Skills
 
 **Rule:** All rules must be dual-readable (human + agent) and losslessly compressed to minimum tokens.
 
-Reusable Socratic / argumentation / diagnostic skills any AI assistant can invoke. Tool-agnostic — drop into `.ai/skills/` or symlink into `.claude/skills/` per the tool mapping above. Organized into two cluster files.
+Reusable Socratic / argumentation / diagnostic skills any AI assistant can invoke. Tool-agnostic — drop into `.ai/skills/` or symlink into `.claude/skills/` per the tool mapping above. Each cluster is a single `SKILL.md`.
 
 **[Argumentation cluster](skills/argumentation/SKILL.md)** — `/argumentation-hygiene`, `/you-sure`, `/steelyman`, `/double-crux`
 - `argumentation-hygiene` — Umbrella rulebook: good-faith principles, bad-faith taxonomy (motte-and-bailey, sealioning, gish gallop, etc.), self-audit checks.
@@ -74,8 +74,23 @@ Reusable Socratic / argumentation / diagnostic skills any AI assistant can invok
 **[Code review](skills/code-review/SKILL.md)** — explicit review workflow
 - `code-review` — Evaluative process distinct from code generation. Audits Design, Architecture, CLI, and Documentation rules; outputs `[FILE:LINE] RULE — fix: action` or `PASS` per item. Prioritized by correctness → seams → DRY/naming → style.
 
+**[Ship](skills/ship/SKILL.md)** — release-readiness gate (meta-skill)
+- `ship` — Decides whether a whole project is ready to go public. Runs an ordered, blocking filter — functional → quality → security → docs → governance → legal → release → publish — delegating each stage to its owning skill (`testing` / `debug`, `code-review`, `security`, `software-engineering`, `governance`, `legal`, `release-engineering`), stopping at the first failure, emitting GO | NO-GO. Deterministic entry point: `/ship`.
+
+**[Governance](skills/governance/SKILL.md)** — open-source governance / community health
+- `governance` — License selection, CONTRIBUTING / CODE_OF_CONDUCT / SECURITY.md, coordinated disclosure, issue & PR templates, DCO / CLA, triage. Owns the `ship` gate's governance stage; pairs with `security` for disclosure handling.
+
+**[Legal](skills/legal/SKILL.md)** — liability disclaimer & third-party-license compliance
+- `legal` — AS-IS / no-warranty / limitation-of-liability notices, dependency & **AI model-weight** license obligations (use + redistribution), attribution / NOTICE files, export & trademark hygiene. Owns the `ship` gate's legal stage; pairs with `governance` (governance picks the outbound license; legal verifies inbound obligations and disclaims liability). Not legal advice.
+
+**[Release engineering](skills/release-engineering/SKILL.md)** — versioning & releases
+- `release-engineering` — Semantic Versioning, Keep a Changelog, Conventional Commits → bump mapping, signed tagging, deprecation policy, breaking-change detection. Owns the `ship` gate's release stage.
+
 **[Debug](skills/debug/SKILL.md)** — five-phase bug investigation
 - `debug` — Phased process for bugs, test failures, build failures, performance regressions, memory issues, and concurrency problems. Reproduce → pattern analysis → hypothesize/eliminate → fix at root → verify with fresh evidence. Enforces: no fix without confirmed root cause, no completion claim without verification, eliminate hypotheses rather than confirm them.
+
+**[Testing](skills/testing/SKILL.md)** — test design, not just running
+- `testing` — Test pyramid and what-to-test (behavior over implementation, edge-case enumeration), test doubles at injected seams, property-based testing, characterization tests for legacy code, and test-smell detection. Pairs with `architecture` (seams), `debug` (failing-test-first), and `rules.md` rule 4.
 
 **[Security](skills/security/SKILL.md)** — scoped security review
 - `security` — Evaluative, read-only by default. Scopes: `code` · `agent` · `infra` · `threat-model` · `full`. Outputs tiered findings (HIGH / MEDIUM / LOW / CLEAN) classified against OWASP Top 10:2025, CWE, CVSS v4. Covers language flaw matrices, ASI agent controls (14), STRIDE threat modeling, secrets handling, and compliance mapping (PCI / HIPAA / GDPR / SOC 2 / NIST / ISO).
@@ -85,10 +100,9 @@ Reusable Socratic / argumentation / diagnostic skills any AI assistant can invok
 
 ### Roadmap
 
-Candidate skills identified as gaps in the current suite. Listed in rough priority order; none drafted yet. Software-engineering and writing-paper workflows are considered covered by the implemented skills above.
+Candidate skills identified as gaps in the current suite, in rough priority order; none drafted yet. The implemented skills now cover software engineering at the **code level** (design, architecture, review, debug, testing) and the **release & maintenance** side of going public — the [`ship`](skills/ship/SKILL.md) readiness gate (`/ship`) plus [`governance`](skills/governance/SKILL.md) (community-health authoring) and [`release-engineering`](skills/release-engineering/SKILL.md) (versioning) for its stages. Remaining gaps:
 
-1. **Estimation / forecasting** — Heuristics for time / cost / effort estimates: reference class forecasting, anchor-and-adjust, planning fallacy, range vs. point estimates, "the question is wrong" detection. Closes the loop with `decision-journal` — predictions logged there are the kind an estimation skill would help make well.
-2. **Planning / decomposition** — Turn ambiguous goals into structured plans: hierarchical breakdown, dependency mapping, definition-of-done, milestone selection, MoSCoW. Distinct from `delegation-ladder` (which routes existing work).
-3. **Data analysis hygiene** — Sanity checks, base rates, distribution awareness, outlier handling, confounders, Simpson's paradox, signal-vs-noise tests. `research` covers literature; this covers numbers.
-4. **Communication for action** — PRs, RFCs, async status updates with audience-awareness and action-oriented framing. Distinct from `documentation` (which syncs docs with code).
-5. **Prioritization** — ICE / RICE scoring, opportunity cost, "what to NOT do." Could fold into a planning skill or stand alone.
+1. **Planning / decomposition** — Turn ambiguous goals into structured plans: hierarchical breakdown, dependency mapping, definition-of-done, milestone selection, MoSCoW, and prioritization (RICE / ICE, opportunity cost, "what to NOT do"). Distinct from `delegation-ladder` (which routes existing work); planning produces the breakdown that delegation then routes.
+2. **Estimation / forecasting** — Heuristics for time / cost / effort estimates: reference class forecasting, anchor-and-adjust, planning fallacy, range vs. point estimates, "the question is wrong" detection. Closes the loop with `decision-journal` — predictions logged there are the kind an estimation skill would help make well.
+3. **Communication for action** — PRs, RFCs, async status updates with audience-awareness and action-oriented framing. Distinct from `documentation` (which syncs docs with code).
+4. **Data analysis hygiene** — Sanity checks, base rates, distribution awareness, outlier handling, confounders, Simpson's paradox, signal-vs-noise tests. `research` covers literature; this covers numbers.

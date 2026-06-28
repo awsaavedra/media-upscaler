@@ -215,6 +215,8 @@ output-quality tuning on the existing Python pipeline — no new feature surface
 - **Video & image optimization.** Tune throughput and output quality: tile-size / VRAM heuristics, dedup + interpolation interaction, NVENC vs libx264 quality/size tradeoffs, thermal pacing on the 3050 Mobile reference box.
 - **Parameter testing.** Systematically sweep `-q` presets and raw overrides (scale, model, tile, face, engine) across the demo asset set; record quality/time results and fold the best defaults back into the preset tables above.
 
+**Exit gate.** v2 closes by passing the **`/ship`** release-readiness filter end-to-end (functional · quality · security · docs · governance · **legal** · release). The `/legal` stage is blocking: ship an **AS-IS, no-warranty, no-liability** disclaimer and confirm every dependency **and bundled AI model weight** (Real-ESRGAN, GFPGAN, video2x, …) is license-compatible for redistribution, with a complete `THIRD_PARTY_NOTICES`. No public release until `/ship` returns GO.
+
 ## v3.0 — Rust rewrite (primary goal: speed)
 
 Exit criteria: reference job measurably faster than v2 on identical hardware; full feature parity; all integration tests pass against the Rust binary; Python scripts retired.

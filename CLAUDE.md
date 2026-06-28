@@ -1,3 +1,3 @@
-See [rules.md](.ai-instructions/rules.md).
+See [rules.md](.ai/rules.md).
 
-Skills available in `.ai-instructions/skills/`: software-engineering · code-review · debug · diagnostic · argumentation · research · security · delegation.
+Skills available in `.ai/skills/`: software-engineering · code-review · debug · diagnostic · argumentation · research · security · delegation · governance · legal · release-engineering · ship · testing.

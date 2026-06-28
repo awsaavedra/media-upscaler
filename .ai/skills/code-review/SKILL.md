@@ -10,10 +10,12 @@ Evaluative process. Criteria defined in software-engineering skill; this skill d
 
 ## Process
 
-1. **Design audit.** Naming · function shape · SRP/DIP · DRY · KISS/YAGNI · fail-fast · smells.
-2. **Architecture audit.** Seams · interface boundaries · injection · infrastructure imports at logic layer · component independence.
-3. **CLI/DevEx audit** (if applicable). POSIX compliance · output terseness · no interactive prompts.
-4. **Documentation currency.** Docs reflect actual implementation and exact file paths.
+Apply each rule set against the code; the authoritative rules live in `software-engineering` — this skill orders the passes and formats findings.
+
+1. **Design audit** — `software-engineering` §Design.
+2. **Architecture audit** — §Architecture.
+3. **CLI / DevEx audit** (if applicable) — §CLI / DevEx.
+4. **Documentation currency** — §Documentation.
 
 ## Output Format
 
@@ -35,13 +37,17 @@ medium     DRY · naming · function shape · smells
 low        style · minor verbosity
 ```
 
+## Hand-offs
+- Finding is a live bug (wrong output/state, not just a rule violation) → `debug` — root-cause it, don't patch in review.
+- Security-sensitive surface (auth, input handling, secrets, deserialization, SQL, file/exec) → `security` for a data-flow trace.
+- Missing, fragile, or absent tests → `testing` for coverage design.
+- Taking the whole project public (open-source / first release), not just this diff → `ship` — the release-readiness gate that runs this review as its quality stage.
+
 ## Gates
 
+Blocking checks specific to review (the rule-level gates live in `software-engineering`):
+
 ```
-[ ] no infrastructure imports at logic layer
-[ ] all external dependencies injected
-[ ] no magic numbers · no dead code
-[ ] SRP: one reason to change per module
-[ ] routing/shim layers remain thin
+[ ] routing / shim layers remain thin
 [ ] docs match committed implementation
 ```

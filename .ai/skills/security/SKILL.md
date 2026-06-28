@@ -1,6 +1,6 @@
 ---
 name: security
-description: Multi-scope security review (code, agents, infrastructure, threat models). Read-only by default; Write only on explicit file-output request. Triggers: `/security [scope]` · "security review" · "audit for vulnerabilities" · "threat model this" · "is this safe" · "OWASP/STRIDE review".
+description: Multi-scope security review (code, agents, infrastructure, threat models). Read-only (Read/Grep) — emits findings as text; never edits files or expands its own tools without an explicit, reviewed grant. Triggers: `/security [scope]` · "security review" · "audit for vulnerabilities" · "threat model this" · "is this safe" · "OWASP/STRIDE review".
 when_to_use: Explicitly invoked on existing artifacts. Evaluative, not always-on. Distinct from writing code or generating threat content.
 allowed-tools: ["Read", "Grep"]
 argument-hint: "[scope: code | agent | infra | threat-model | full]"
@@ -128,6 +128,8 @@ Use STRIDE before implementation or during architecture review.
 **Detect.** Keywords (`API_KEY`, `SECRET`, `PASSWORD`, `TOKEN`, `PRIVATE_KEY`, `AWS_SECRET`, `BEARER`) · bounded base64-like blobs `\b[A-Za-z0-9+/]{32,64}={0,2}\b` (heuristic, noisy) · common token prefixes (GitHub, OpenAI-style, AWS access keys).
 
 **Rules.** Never commit secrets · use a secret manager · inject at runtime · rotate on exposure · redact from logs · prefer short-lived credentials · keep out of git history, images, CI logs, and LLM context.
+
+**Pre-publish / post-leak.** Before a repo goes public — or after any exposure — scan *full* git history, not just the working tree (`git log -p`, `gitleaks`, `trufflehog`). On a hit, **rotate the credential first**: a history rewrite (`git-filter-repo` / BFG) never reaches existing forks, clones, mirrors, or caches. Publishing is irreversible — an indexed secret is burned regardless of later rewrites.
 
 ## Compliance
 

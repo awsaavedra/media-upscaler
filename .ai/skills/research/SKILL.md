@@ -8,6 +8,8 @@ when_to_use: Any topic investigation, tool comparison, literature review, or evi
 
 **Pipeline.** decompose → search → validate → synthesize → gap-check.
 
+**Internet-gated.** Needs live web access — get the user's go-ahead before searching (`rules.md` rule 0).
+
 - **decompose** — query → sub-questions
 - **search** — 3–5 queries each; papers > docs > repos > blogs
 - **validate** — 2+ sources/claim; conflict → report both

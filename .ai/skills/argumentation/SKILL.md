@@ -1,11 +1,12 @@
 ---
 name: argumentation
 description: Four argumentation skills. /argumentation-hygiene (or "is this argument clean?", "what's that move where...") — audit arguments via good-faith principles, bad-faith taxonomy, self-audit checks. /you-sure (or "you sure?", "really?", "hold on") — self-audit a confident claim via ITT before doubling down. /steelyman (or "tear this apart", "devil's advocate", "poke holes") — consensual adversarial review of user's writing/code/plan/design. /double-crux (or "we disagree", "we're stuck", "let's find the actual disagreement") — symmetric disagreement where both sides name a crux. Tool-agnostic.
+when_to_use: Reasoning about contested claims, auditing an argument's honesty, stress-testing your own or the user's position, or locating the real point of a disagreement. Sub-skills self-trigger on the phrases above.
 ---
 
 # Argumentation Skills
 
-Four skills sharing core moves (ITT, cruxes, bet-grade confidence): rulebook, self-audit, adversarial challenge, symmetric disagreement.
+Four skills sharing core moves (ITT, cruxes, bet-grade confidence): hygiene = rulebook · you-sure = self-audit · steelyman = adversarial sparring · double-crux = symmetric disagreement.
 
 **Rhetoric vs. philosophy:** Rhetoric = persuasion. Philosophy = truth, then clarity. Sophistry = rhetoric masquerading as philosophy. These skills are philosophical. Test: *is this right?* not *does this sound right?* Constructing an argument you'd find persuasive but don't believe → stop; that's the failure mode these skills exist to prevent.
 
@@ -64,8 +65,6 @@ Rulebook for honest argument. Umbrella for the other three skills. Three parts: 
 - **Team of Rivals:** embed disagreement structurally inside one decision system.
 
 ITT > steelman: requires understanding *why* a thoughtful person holds the view, not just that it has defensible form.
-
-**Skill map:** hygiene = rulebook · you-sure = self-audit · steelyman = sparring · double-crux = symmetric disagreement.
 
 **Prompt seed:** State the other side's position so they'd endorse it; name your crux; check whether your response engages substance or deflects.
 
