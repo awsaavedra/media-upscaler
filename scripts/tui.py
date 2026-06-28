@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -136,6 +138,70 @@ def find_completed_output(item: MediaItem) -> Path | None:
         if cand.exists():
             return cand
     return None
+
+
+def output_artifacts(item: MediaItem) -> list[Path]:
+    """Every on-disk file a completed run leaves for an item: the upscaled output
+    plus its progress/audit sidecars. Naming differs by media type (images write
+    '{stem}_out.{ext}' and '{stem}.audit.json'; video writes '{name}' and
+    '{name}.audit.json'), so we enumerate all candidates and let the caller skip
+    the ones that don't exist. Used by reset to wipe a prior run clean."""
+    out = item.output_path
+    out_dir = out.parent
+    candidates = [
+        out,                                   # bare output / video result
+        Path(f"{out}.progress.json"),          # '{stem}.png.progress.json' / '{name}.progress.json'
+        Path(f"{out}.audit.json"),             # video audit '{name}.audit.json'
+        out_dir / f"{out.stem}.audit.json",    # image audit '{stem}.audit.json'
+    ]
+    real = find_completed_output(item)         # Real-ESRGAN '{stem}_out.{ext}'
+    if real is not None:
+        candidates.append(real)
+    seen: dict[Path, None] = {}
+    for p in candidates:
+        seen.setdefault(p, None)
+    return list(seen)
+
+
+# Opening the output folder when a batch finishes. xdg-open is the freedesktop
+# standard and present on essentially every Linux desktop; the rest are
+# belt-and-suspenders fallbacks for stripped-down or unusual setups. macOS uses
+# `open`, which always exists. `gio open` takes a sub-verb, hence the special case.
+_LINUX_OPENERS = ("xdg-open", "gio", "nautilus", "dolphin", "thunar", "nemo", "pcmanfm", "caja")
+
+
+def file_manager_commands(
+    path: Path, system: str | None = None, which=shutil.which
+) -> list[list[str]]:
+    """Ordered file-manager open commands to try for *path* on the given OS. Pure
+    (no spawning) so it can be unit-tested; `open_in_file_manager` runs the first
+    that works. Empty list means no opener is available (e.g. a headless box)."""
+    system = system or platform.system()
+    p = str(path)
+    if system == "Darwin":
+        return [["open", p]]
+    if system == "Windows":
+        return [["explorer", p]]
+    cmds: list[list[str]] = []
+    for name in _LINUX_OPENERS:
+        exe = which(name)
+        if not exe:
+            continue
+        cmds.append([exe, "open", p] if name == "gio" else [exe, p])
+    return cmds
+
+
+def open_in_file_manager(path: Path) -> bool:
+    """Open *path* in the OS file manager, best-effort and non-blocking. Returns
+    False when nothing could be launched — callers treat this as a nicety, never
+    a hard dependency."""
+    for cmd in file_manager_commands(path):
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except OSError:
+            continue
+    return False
 
 
 # Liveness for "running" sidecars. A job that died uncleanly (TUI closed mid-run,
@@ -437,6 +503,12 @@ ChecklistRow.highlighted { background: $primary 30%; }
 ChecklistRow.done        { color: $text-muted; }
 ChecklistRow.active      { color: $success; }
 ChecklistRow.failed      { color: $error; }
+DirHeader {
+    height: 1;
+    padding: 0 1;
+    color: $secondary;
+    text-style: bold;
+}
 """
 
 
@@ -444,16 +516,18 @@ class ChecklistRow(Widget):
     can_focus = False  # App manages cursor/highlighting manually
     _render_markup = False  # [✓] [✗] [ ] are literal characters, not markup
 
-    def __init__(self, item: MediaItem, idx: int) -> None:
+    def __init__(self, item: MediaItem, idx: int, indent: int = 0) -> None:
         super().__init__(id=f"row-{idx}")
         self.item = item
         self.idx = idx
+        self._indent = indent  # nesting depth under a DirHeader (0 = section root)
 
     def render(self) -> str:
+        pad = "   " * self._indent  # align files beneath their 📁 folder
         name = self.item.path.name
         if len(name) > 30:
             name = name[:28] + "…"
-        return f"{self.item.checkbox} {name:<30}  {self.item.status_label}"
+        return f"{pad}{self.item.checkbox} {name:<30}  {self.item.status_label}"
 
     def sync_classes(self) -> None:
         self.remove_class("done", "active", "failed")
@@ -464,6 +538,26 @@ class ChecklistRow(Widget):
         elif self.item.status == "failed":
             self.add_class("failed")
         self.refresh()
+
+
+_DIR_ICON = "📁"
+
+
+class DirHeader(Static):
+    """A folder row inside a media section, like a file browser: shows the
+    subdirectory's own name (not the full path) with a 📁 icon, and the images
+    that live in it are mounted indented beneath it. Purely visual — it is not a
+    MediaItem, carries no checkbox, and is skipped by the cursor."""
+    _render_markup = False  # 📁 is a literal glyph, not markup
+
+    def __init__(self, name: str, depth: int = 0) -> None:
+        super().__init__()
+        self._name = name
+        self._depth = depth
+
+    def render(self) -> str:
+        pad = "   " * self._depth
+        return f"{pad}{_DIR_ICON} {self._name}/"
 
 
 # Row-header icons per media type: picture, video, audio.
@@ -588,15 +682,17 @@ _KEYMAP: tuple[KeyAction, ...] = (
     KeyAction((("space", "toggle_item"),), "Space", "Toggle",
               "Toggle the highlighted item in / out of the queue", "SELECT"),
     KeyAction((("a", "select_all"),), "a", "All",
-              "Select all eligible items", "SELECT"),
+              "Select all items in the cursor's section / subdirectory", "SELECT"),
     KeyAction((("n", "select_none"),), "n", "None",
-              "Unselect every item", "SELECT"),
+              "Unselect items in the cursor's section / subdirectory", "SELECT"),
     KeyAction((("t", "invert_sel"),), "t", "Invert",
               "Invert the current selection", "SELECT"),
     KeyAction((("r", "retry_failed"),), "r", "Retry",
               "Re-queue every failed item", "SELECT"),
     KeyAction((("f", "force_redo"),), "f", "Redo",
               "Force re-run the highlighted already-done item", "SELECT"),
+    KeyAction((("R", "reset"),), "R", "Reset",
+              "Re-queue every item — re-run all outputs", "SELECT"),
     KeyAction((("s", "start_batch"),), "s", "Start",
               "Start processing the queued items", "RUN"),
     KeyAction((("p", "pause_resume"),), "p", "Pause",
@@ -887,6 +983,7 @@ class MediaRestoreApp(App):
         self._gpu: dict = {}
         self._actual_secs: dict[str, list[float]] = {}
         self._opts: dict[str, str] = dict(_OPT_DEFAULTS)
+        self._run_output_dirs: set[Path] = set()  # output folders to open at batch end
 
     # ── Layout ───────────────────────────────────────────────────────────────
 
@@ -932,13 +1029,52 @@ class MediaRestoreApp(App):
         self.query_one(ActiveJobPanel).update_job(item, time.time() - self._job_start)
         self._update_eta()
 
+    def _section_root(self, media_type: str) -> Path:
+        sub = {"image": "images", "video": "video", "audio": "audio"}[media_type]
+        return self._input_dir / sub
+
+    def _section_output_root(self, media_type: str) -> Path:
+        sub = {"image": "images", "video": "video", "audio": "audio"}[media_type]
+        return self._output_dir / sub
+
+    def _open_output_dirs(self) -> None:
+        """When a batch finishes, pop open the output folder(s) that received new
+        files so the user can eyeball results right away — one window per media
+        type (output/images, output/video, …). Best-effort: a box with no file
+        manager just logs a note, never errors."""
+        dirs = sorted(d for d in self._run_output_dirs if d.is_dir())
+        self._run_output_dirs = set()
+        for d in dirs:
+            if open_in_file_manager(d):
+                self._log(f"Opened output folder [bold]{d}[/bold]")
+            else:
+                self._log(f"Output ready in {d} (no file manager found to open it)")
+
+    def _item_subdir_parts(self, item: MediaItem) -> tuple[str, ...]:
+        """The item's source subdirectory relative to its section root, as path
+        parts. Empty tuple means the item sits directly in the section root."""
+        try:
+            rel = item.path.parent.relative_to(self._section_root(item.media_type))
+        except ValueError:
+            return ()
+        return () if rel == Path(".") else rel.parts
+
     def _populate_rows(self) -> None:
         img_list = self.query_one("#img-list", Vertical)
         vid_list = self.query_one("#vid-list", Vertical)
+        # Mount a 📁 folder header the first time each subdirectory appears, so the
+        # section reads like a file browser: folders named, their files indented.
+        seen_dirs: set[tuple[str, str]] = set()
         for idx, item in enumerate(self._items):
-            row = ChecklistRow(item, idx)
-            row.sync_classes()
             target = img_list if item.media_type == "image" else vid_list
+            parts = self._item_subdir_parts(item)
+            for depth, name in enumerate(parts):
+                key = (item.media_type, "/".join(parts[: depth + 1]))
+                if key not in seen_dirs:
+                    seen_dirs.add(key)
+                    target.mount(DirHeader(name, depth))
+            row = ChecklistRow(item, idx, indent=len(parts))
+            row.sync_classes()
             target.mount(row)
 
     # ── Cursor management ─────────────────────────────────────────────────────
@@ -1088,15 +1224,28 @@ class MediaRestoreApp(App):
             self._update_ui()
 
     def action_select_all(self) -> None:
-        for item in self._items:
-            if item.status not in ("done", "active"):
-                item.selected = True
-        self._update_ui()
+        self._set_section_selection(True)
 
     def action_select_none(self) -> None:
+        self._set_section_selection(False)
+
+    def _set_section_selection(self, selected: bool) -> None:
+        """[a]/[n] are scoped to the highlighted item's section *and* its source
+        subdirectory: under Images, [a] selects only images, and if the cursor is
+        on an item inside input/images/foo/ it selects only the items in foo/ —
+        never a sibling subdirectory, never video/audio. When images live flat in
+        one directory this naturally means "all images". No-op when the cursor
+        isn't on a focusable item (e.g. every section fully done)."""
+        current = self._current_item()
+        if current is None:
+            return
+        mtype = current.media_type
+        subdir = current.path.parent
         for item in self._items:
-            if item.status not in ("done", "active"):
-                item.selected = False
+            if (item.media_type == mtype
+                    and item.path.parent == subdir
+                    and item.status not in ("done", "active")):
+                item.selected = selected
         self._update_ui()
 
     def action_invert_sel(self) -> None:
@@ -1120,6 +1269,39 @@ class MediaRestoreApp(App):
             item.done_mtime = ""
             item.selected = True
             self._update_ui()
+
+    def action_reset(self) -> None:
+        """Reset everything for a clean re-run: wipe each item's on-disk output
+        (the upscaled file plus its progress/audit sidecars), then re-queue and
+        select every item so the next [s] regenerates the whole batch from
+        scratch. Only files belonging to scanned input items are removed, so
+        unrelated output (e.g. the test suite's output/images/test-results/) is
+        left intact. A live job is skipped — it is not safe to yank a running
+        item's files out from under it."""
+        wiped = 0
+        for item in self._items:
+            if item.status == "active":
+                continue
+            for art in output_artifacts(item):
+                if not art.exists():
+                    continue
+                try:
+                    art.unlink()
+                    wiped += 1
+                except OSError as exc:
+                    self._log(f"reset: could not remove {art.name}: {exc}")
+            item.status = "queued"
+            item.pct = 0
+            item.done_mtime = ""
+            item.error_msg = ""
+            item.eta_str = ""
+            item.throughput_str = ""
+            item.selected = True
+        self._log(
+            f"[bold]Reset[/bold] — wiped {wiped} output file(s); "
+            "re-queued all items, press [s] to re-run"
+        )
+        self._update_ui()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
@@ -1145,6 +1327,7 @@ class MediaRestoreApp(App):
             self._log("Nothing queued — select items then press [s]")
             return
         self._run_start = time.time()
+        self._run_output_dirs = set()
         self._run_next(queue)
 
     def _run_next(self, queue: list[MediaItem]) -> None:
@@ -1154,6 +1337,7 @@ class MediaRestoreApp(App):
             self.query_one(ActiveJobPanel).set_idle()
             self._update_ui()
             self._log("[bold green]Batch complete[/bold green]")
+            self._open_output_dirs()
             return
         item = queue[0]
         remaining = queue[1:]
@@ -1212,6 +1396,7 @@ class MediaRestoreApp(App):
             item.status = "done"
             item.done_mtime = datetime.now().strftime("%Y-%m-%d %H:%M")
             item.pct = 100
+            self._run_output_dirs.add(self._section_output_root(item.media_type))
             self._log(f"[green]✓ {item.path.name} done[/green]")
         else:
             item.status = "failed"

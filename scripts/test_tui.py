@@ -130,6 +130,222 @@ class ScanSelectionDefaults(unittest.TestCase):
             self.assertEqual([i.selected for i in items], [True, False, False])
 
 
+class OutputArtifacts(unittest.TestCase):
+    """`output_artifacts` drives the [R] reset wipe: it must enumerate the
+    upscaled output and its sidecars for both naming schemes, and nothing else."""
+
+    def test_image_artifacts_enumerated_and_real_files_exist(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            out_dir = Path(d)
+            (out_dir / "sample_out.png").write_bytes(b"\x00")
+            (out_dir / "sample.png.progress.json").write_text("{}")
+            (out_dir / "sample.audit.json").write_text("{}")
+            item = tui.MediaItem(
+                path=Path("/in/images/sample.png"),
+                media_type="image",
+                output_path=out_dir / "sample.png",
+            )
+            names = {p.name for p in tui.output_artifacts(item)}
+            self.assertIn("sample_out.png", names)          # Real-ESRGAN output
+            self.assertIn("sample.png.progress.json", names)
+            self.assertIn("sample.audit.json", names)
+
+    def test_video_artifacts_enumerated(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            out_dir = Path(d)
+            (out_dir / "clip.mp4").write_bytes(b"\x00")
+            (out_dir / "clip.mp4.progress.json").write_text("{}")
+            (out_dir / "clip.mp4.audit.json").write_text("{}")
+            item = tui.MediaItem(
+                path=Path("/in/video/clip.mp4"),
+                media_type="video",
+                output_path=out_dir / "clip.mp4",
+            )
+            names = {p.name for p in tui.output_artifacts(item)}
+            self.assertIn("clip.mp4", names)
+            self.assertIn("clip.mp4.progress.json", names)
+            self.assertIn("clip.mp4.audit.json", names)
+
+    def test_reset_wipes_outputs_and_requeues(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            out_dir = Path(d) / "output" / "images"
+            out_dir.mkdir(parents=True)
+            (out_dir / "sample_out.png").write_bytes(b"\x00")
+            (out_dir / "sample.png.progress.json").write_text("{}")
+            (out_dir / "sample.audit.json").write_text("{}")
+            preserved = out_dir / "test-results"
+            preserved.mkdir()
+            (preserved / "keep_out.png").write_bytes(b"\x00")
+
+            done = tui.MediaItem(
+                path=Path("/in/images/sample.png"),
+                media_type="image",
+                output_path=out_dir / "sample.png",
+                status="done",
+                done_mtime="2026-01-01 00:00",
+            )
+            # Exercise the same wipe logic action_reset uses, without a live App.
+            for art in tui.output_artifacts(done):
+                if art.exists():
+                    art.unlink()
+            done.status = "queued"
+            done.selected = True
+
+            self.assertFalse((out_dir / "sample_out.png").exists())
+            self.assertFalse((out_dir / "sample.png.progress.json").exists())
+            self.assertFalse((out_dir / "sample.audit.json").exists())
+            self.assertTrue((preserved / "keep_out.png").exists())  # untouched
+            self.assertEqual(done.status, "queued")
+            self.assertTrue(done.selected)
+
+
+class SectionScopedSelection(unittest.IsolatedAsyncioTestCase):
+    """[a]/[n] are scoped to the cursor's section: under Images they select /
+    deselect images only, never the video (or audio) rows."""
+
+    async def test_a_and_n_only_touch_the_cursors_section(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            img_dir = root / "input" / "images"
+            vid_dir = root / "input" / "video"
+            img_dir.mkdir(parents=True)
+            vid_dir.mkdir(parents=True)
+            (img_dir / "a.png").write_bytes(b"\x00")
+            (img_dir / "b.png").write_bytes(b"\x00")
+            (vid_dir / "c.mp4").write_bytes(b"\x00")
+
+            app = tui.MediaRestoreApp(input_dir=root / "input", preset="medium")
+            async with app.run_test():
+                images = [it for it in app._items if it.media_type == "image"]
+                videos = [it for it in app._items if it.media_type == "video"]
+                self.assertEqual(len(images), 2)
+                self.assertEqual(len(videos), 1)
+
+                # Cursor on the first (image) row -> [a] selects images only.
+                app._cursor = 0
+                video_before = videos[0].selected
+                app.action_select_all()
+                self.assertTrue(all(i.selected for i in images))
+                self.assertEqual(videos[0].selected, video_before)  # untouched
+
+                # Still on an image row -> [n] deselects images only.
+                videos[0].selected = True
+                app.action_select_none()
+                self.assertTrue(all(not i.selected for i in images))
+                self.assertTrue(videos[0].selected)  # untouched
+
+                # Move cursor onto the video row -> [n] now affects video only.
+                focusable = app._focusable_indices()
+                app._cursor = focusable.index(app._items.index(videos[0]))
+                images[0].selected = True
+                app.action_select_none()
+                self.assertFalse(videos[0].selected)
+                self.assertTrue(images[0].selected)  # untouched
+
+    async def test_a_is_scoped_to_the_cursors_subdirectory(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            img_dir = root / "input" / "images"
+            (img_dir / "sub_a").mkdir(parents=True)
+            (img_dir / "sub_b").mkdir(parents=True)
+            (img_dir / "top.png").write_bytes(b"\x00")
+            (img_dir / "sub_a" / "x.png").write_bytes(b"\x00")
+            (img_dir / "sub_a" / "y.png").write_bytes(b"\x00")
+            (img_dir / "sub_b" / "z.png").write_bytes(b"\x00")
+
+            app = tui.MediaRestoreApp(input_dir=root / "input", preset="medium")
+            async with app.run_test():
+                for it in app._items:
+                    it.selected = False
+                by_name = {it.path.name: it for it in app._items}
+
+                # Cursor on sub_a/x.png -> [a] selects only sub_a/, not sub_b/ or top.
+                target_idx = app._items.index(by_name["x.png"])
+                app._cursor = app._focusable_indices().index(target_idx)
+                app.action_select_all()
+
+                self.assertTrue(by_name["x.png"].selected)
+                self.assertTrue(by_name["y.png"].selected)
+                self.assertFalse(by_name["z.png"].selected)   # sibling subdir
+                self.assertFalse(by_name["top.png"].selected)  # parent dir
+
+
+class FileManagerOpen(unittest.TestCase):
+    """`file_manager_commands` picks the right opener per OS so the output folder
+    can pop open when a batch finishes — on most Linux desktops and on macOS."""
+
+    def test_macos_uses_open(self) -> None:
+        cmds = tui.file_manager_commands(Path("/out/images"), system="Darwin")
+        self.assertEqual(cmds, [["open", "/out/images"]])
+
+    def test_linux_prefers_xdg_open(self) -> None:
+        cmds = tui.file_manager_commands(
+            Path("/out/images"), system="Linux",
+            which=lambda n: f"/usr/bin/{n}" if n == "xdg-open" else None,
+        )
+        self.assertEqual(cmds[0], ["/usr/bin/xdg-open", "/out/images"])
+
+    def test_linux_falls_back_to_a_file_manager(self) -> None:
+        # No xdg-open, but nautilus is installed -> still openable.
+        cmds = tui.file_manager_commands(
+            Path("/out/images"), system="Linux",
+            which=lambda n: "/usr/bin/nautilus" if n == "nautilus" else None,
+        )
+        self.assertEqual(cmds, [["/usr/bin/nautilus", "/out/images"]])
+
+    def test_linux_gio_takes_open_subverb(self) -> None:
+        cmds = tui.file_manager_commands(
+            Path("/out/images"), system="Linux",
+            which=lambda n: "/usr/bin/gio" if n == "gio" else None,
+        )
+        self.assertEqual(cmds, [["/usr/bin/gio", "open", "/out/images"]])
+
+    def test_headless_returns_no_command(self) -> None:
+        cmds = tui.file_manager_commands(
+            Path("/out/images"), system="Linux", which=lambda n: None,
+        )
+        self.assertEqual(cmds, [])
+
+
+class DirectoryGrouping(unittest.IsolatedAsyncioTestCase):
+    """Subdirectories render like a file browser: a 📁 header naming the folder,
+    with its images mounted indented beneath it."""
+
+    async def test_subdir_gets_a_named_folder_header_and_indented_rows(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            img_dir = root / "input" / "images"
+            (img_dir / "img-subdir").mkdir(parents=True)
+            (img_dir / "top.png").write_bytes(b"\x00")
+            (img_dir / "img-subdir" / "x.png").write_bytes(b"\x00")
+            (img_dir / "img-subdir" / "y.png").write_bytes(b"\x00")
+
+            app = tui.MediaRestoreApp(input_dir=root / "input", preset="medium")
+            async with app.run_test():
+                headers = list(app.query(tui.DirHeader))
+                self.assertEqual(len(headers), 1)
+                self.assertIn("img-subdir", headers[0].render())
+                self.assertIn(tui._DIR_ICON, headers[0].render())
+
+                # The subdir's files are indented; the top-level file is not.
+                rows = {r.item.path.name: r for r in app.query(tui.ChecklistRow)}
+                self.assertEqual(rows["top.png"]._indent, 0)
+                self.assertEqual(rows["x.png"]._indent, 1)
+                self.assertEqual(rows["y.png"]._indent, 1)
+
+
 class KeyBindingSurface(unittest.TestCase):
     """Bindings, footer, and help overlay are all generated from _KEYMAP, so they
     cannot drift. Regression: `d` change-dir was advertised in the footer but had

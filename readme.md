@@ -23,15 +23,20 @@ Full item lists and exit criteria: [`docs/roadmap.md`](docs/roadmap.md)
 4. Drop media into `input/images/` or `input/video/`
 5. **Launch TUI**: `./tool tui`  ← primary interface; all options configurable here
 6. Select files, adjust preset with `[P]`, advanced options with `[o]`, then `[s]` to start
+7. When the batch finishes, the output folder opens automatically in your file manager (`xdg-open` on Linux, `open` on macOS)
+
+Subdirectories under `input/images/` show as `📁` folders with their files indented, like a file browser; `[a]`/`[n]` select within the folder your cursor is in.
 
 ### TUI keyboard shortcuts
 | Key | Action |
 |---|---|
 | `↑ / ↓` | Navigate file list |
 | `SPACE` | Toggle file selection; ETA updates instantly |
-| `a / n / t` | Select all / none / invert |
+| `a / n` | Select all / none — **scoped to the cursor's section & subdirectory** |
+| `t` | Invert selection |
 | `r` | Retry all failed |
 | `f` | Force re-run a done item |
+| `R` | Reset — wipe all outputs and re-queue every item for a clean re-run |
 | `s` | Start batch |
 | `p` | Pause / resume active job |
 | `c` | Cancel active job |

@@ -148,6 +148,8 @@ These are prerequisites for the unified TUI but are small enough to ship early:
 The TUI (`scripts/tui.py`, `tool tui`) is feature-complete for v2. Everything the spec calls for is implemented and unit-tested (`scripts/test_tui.py`, run by `test.sh` section 30b):
 
 - **Core interactive layer** ✓ — layout, scanning, default selection (images all-on; first-unprocessed video only), per-section select/unselect buttons, aggregate ETA bar, all keyboard shortcuts, job execution, GPU polling, log pane.
+- **File-browser view + scoped selection** ✓ — subdirectories render as `📁` folder headers with indented files; `[a]`/`[n]` are scoped to the cursor's section **and** subdirectory (not global). `[R]` reset wipes every item's output (file + sidecars) and re-queues for a clean re-run.
+- **Open output on completion** ✓ — when a batch finishes, the output folder(s) that received files pop open in the OS file manager (`xdg-open` with file-manager fallbacks on Linux, `open` on macOS); best-effort, no-ops headlessly.
 - **Sidecar writers** ✓ — `upscale-image.sh` (`{stem}.{fmt}.progress.json`) and `upscale-video.sh` (`{output}.progress.json`) write `running`/`done`/`failed` with live `pct`; video adds `fps`/`remaining`.
 - **Reattach / session persistence** ✓ — `_reattach_sidecars()` on mount marks live jobs `▶ active`; `_tick_sidecars()` polls every 5 s for detached jobs. Field normalization (`fps` → `throughput`) is centralized in `normalize_sidecar()`.
 - **Adaptive ETA refinement** ✓ — `_after_job` records actual rate and re-seeds remaining same-type queued items to the running average.
@@ -202,6 +204,16 @@ What has actually been run, not what is assumed to work. Only Omarchy has been e
 | **macOS** | ❓ | ❓ | ❓ | ❓ | ⬜ untested — known blockers: video2x AppImage is Linux-only (needs brew/source NCNN front-end); torch cu118 wheels N/A on Apple Silicon |
 
 Legend: ✅ verified · 🟡 in progress · ⬜ untested · ❓ unknown (not yet run). Update a row only after running the suite on that OS — do not promote to ✅ on assumption.
+
+## v2.x — bug bashing, stabilization & quality tuning (next phase)
+
+Lock v2 down before the v3 Rust rewrite. Focus is correctness, robustness, and
+output-quality tuning on the existing Python pipeline — no new feature surface.
+
+- **Bug bashing.** Exercise the full TUI surface against real inputs (reset, per-section / per-subdirectory select, force-redo, retry, pause/cancel/resume, dir change, options modal); hunt and fix edge-case crashes, stale-state bugs, and progress/ETA glitches. Convert each fix into a regression test in `scripts/test_tui.py`.
+- **Stabilization.** Confirm the live progress regexes against real GPU stdout (`parse_image_progress` / `parse_video_progress`, the open item above); harden sidecar reattach and zombie-job reconciliation; complete the manual TUI test plan (`test.sh` sections 31–48) and the per-OS matrix above.
+- **Video & image optimization.** Tune throughput and output quality: tile-size / VRAM heuristics, dedup + interpolation interaction, NVENC vs libx264 quality/size tradeoffs, thermal pacing on the 3050 Mobile reference box.
+- **Parameter testing.** Systematically sweep `-q` presets and raw overrides (scale, model, tile, face, engine) across the demo asset set; record quality/time results and fold the best defaults back into the preset tables above.
 
 ## v3.0 — Rust rewrite (primary goal: speed)
 

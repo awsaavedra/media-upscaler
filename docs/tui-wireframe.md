@@ -131,6 +131,54 @@ Done items remain `[✓]` in the list so their completion is visible, but they a
 
 ---
 
+## Subdirectory grouping (file-browser view)
+
+Inputs are scanned recursively, so a media section is not necessarily flat. When a
+source subdirectory exists under `input/<type>/`, the TUI renders it like a file
+browser: a **folder header** (`📁 <name>/`) names the subdirectory, and the files
+that live in it are listed **indented** beneath it. Files that sit directly in the
+section root stay un-indented. Nested subdirectories indent one level per depth.
+
+```
+── 🖼  Images   7 selected · 0 excluded
+   [ select all ]  [ unselect all ]
+   [✓] douglas-portrait-lr198.png        · queued   est. ~2 m
+   📁 img-subdir/
+      [✓] 76-ball-sign-lr320.png         · queued   est. ~2 m
+      [✓] budapest-parliament-lr480.png  · queued   est. ~2 m
+      [✓] great-wave-lr600.png           · queued   est. ~2 m
+   [✓] nypl-1908-scan-lr480.png          · queued   est. ~2 m
+```
+
+The folder header is purely visual — it has no checkbox and the cursor skips over
+it. The folder name shown is the **subdirectory's own name**, not the full path.
+
+**Scoped `[a]` / `[n]` selection.** `[a]` (select all) and `[n]` (deselect all) act
+only on the items that share the cursor's **section _and_ source subdirectory** —
+never a sibling folder, never another media type. With the cursor on a file inside
+`📁 img-subdir/`, `[a]` selects exactly the three files in that folder; with the
+cursor on a root-level image it selects the root-level images. When a section has
+no subdirectories this is simply "all items in the section", as before. The
+per-section header buttons (`[ select all ]` / `[ unselect all ]`) remain
+section-wide.
+
+---
+
+## Batch completion — open output folder
+
+When a batch finishes (`_run_next` drains the queue), the TUI pops open the output
+folder(s) that received new files in the OS file manager — one window per media
+type that produced output (`output/images`, `output/video`, …) — so results can be
+eyeballed immediately without leaving the terminal.
+
+Opening is **best-effort and non-blocking**: macOS uses `open`, Linux uses
+`xdg-open` (the freedesktop standard, present on essentially every desktop) with a
+fallback chain of common file managers (`gio`, `nautilus`, `dolphin`, `thunar`,
+`nemo`, `pcmanfm`, `caja`). On a headless box where none is found, the run logs
+`Output ready in <dir>` and carries on — opening is never a hard dependency.
+
+---
+
 ## Aggregate ETA mechanics
 
 ```
@@ -162,11 +210,12 @@ All shortcuts are **permanently displayed** in the two-row key bindings bar at t
 |---|---|---|
 | `↑ / ↓` | Navigate file list | row 1 |
 | `SPACE` | Toggle checkbox; ETA updates immediately | row 1 |
-| `a` | Select all unfinished items | row 1 |
-| `n` | Deselect all | row 1 |
+| `a` | Select all unfinished items **in the cursor's section / subdirectory** | row 1 |
+| `n` | Deselect all items **in the cursor's section / subdirectory** | row 1 |
 | `t` | Invert selection | row 1 |
 | `r` | Retry all `✗ failed` items | row 1 |
 | `f` | Force re-run focused `✓ done` item | row 1 |
+| `R` | Reset: wipe every item's output (file + sidecars) and re-queue all for a clean re-run | row 1 |
 | `s` | Start batch | row 2 |
 | `p` | Pause / resume active job | row 2 |
 | `c` | Cancel active job | row 2 |
