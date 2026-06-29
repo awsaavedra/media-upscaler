@@ -1,0 +1,111 @@
+THIRD-PARTY NOTICES
+===================
+
+media-upscaler is licensed under the MIT License (see LICENSE). It is a thin
+orchestration layer — shell scripts plus a Python TUI — that drives third-party
+inference engines, system tools, and pre-trained model weights.
+
+IMPORTANT — WHAT THIS REPOSITORY REDISTRIBUTES
+----------------------------------------------
+This repository bundles NONE of the components listed below. Every engine,
+Python dependency, and model weight is fetched onto your machine by
+`scripts/setup.sh` at install time, or is expected to be already installed on
+the system (ffmpeg, ImageMagick, the NVIDIA driver). They are excluded from
+version control via .gitignore (`tools/`, `*.pth`, `.venv/`, `venv/`,
+`gfpgan/weights`).
+
+Consequence: the copyleft terms of the GPL-licensed engines below (video2x,
+this build of ffmpeg) attach to YOUR local installation, not to this project's
+source. By running setup.sh you fetch those components and inherit their
+licenses directly from upstream. This notice is provided so you do so knowingly.
+None of these licenses are altered, relabeled, or relicensed here.
+
+This file is an inventory for transparency and attribution; it is not legal
+advice. Verify the upstream terms before any commercial use or redistribution
+of a derived/bundled artifact.
+
+
+1. PYTHON DEPENDENCIES — TUI runtime (.venv, fetched at setup)
+-------------------------------------------------------------
+  textual                 MIT          https://github.com/Textualize/textual
+  rich                    MIT          https://github.com/Textualize/rich
+  markdown-it-py          MIT          https://github.com/executablebooks/markdown-it-py
+  mdit-py-plugins         MIT          https://github.com/executablebooks/mdit-py-plugins
+  mdurl                   MIT          https://github.com/executablebooks/mdurl
+  linkify-it-py           MIT          https://github.com/tsutsu3/linkify-it-py
+  uc-micro-py             MIT          https://github.com/tsutsu3/uc-micro-py
+  platformdirs            MIT          https://github.com/platformdirs/platformdirs
+  typing_extensions       PSF-2.0      https://github.com/python/typing_extensions
+  Pygments                BSD-2-Clause https://github.com/pygments/pygments
+
+
+2. PYTHON DEPENDENCIES — Real-ESRGAN inference (tools/realesrgan/venv, fetched at setup)
+---------------------------------------------------------------------------------------
+  Real-ESRGAN (realesrgan) BSD-3-Clause  https://github.com/xinntao/Real-ESRGAN
+  basicsr                  Apache-2.0    https://github.com/XPixelGroup/BasicSR
+  facexlib                 Apache-2.0    https://github.com/xinntao/facexlib
+  gfpgan                   Apache-2.0    https://github.com/TencentARC/GFPGAN
+  torch                    BSD-3-Clause  https://github.com/pytorch/pytorch
+  torchvision              BSD-3-Clause  https://github.com/pytorch/vision
+  numpy                    BSD-3-Clause  https://github.com/numpy/numpy
+  scipy                    BSD-3-Clause  https://github.com/scipy/scipy
+  (plus their transitive dependencies, each under its own permissive license)
+
+
+3. EXTERNAL ENGINES & SYSTEM TOOLS (fetched at setup or system-provided)
+-----------------------------------------------------------------------
+  video2x  6.4.0   GPL-3.0   https://github.com/k4yt3x/video2x
+      Downloaded as an AppImage by setup.sh and extracted under tools/video2x/.
+      GPL-3.0 copyleft: if you redistribute the AppImage or a work derived from
+      it, GPL-3.0 obligations (source availability, same-license) apply to that
+      distribution. media-upscaler invokes it only as a separate subprocess
+      (mere aggregation) and does not redistribute it. Bundles its own NCNN/
+      Vulkan model front-ends (RealCUGAN, realesr-animevideov3, RIFE).
+
+  ffmpeg / ffprobe   GPL-3.0 (this build)   https://ffmpeg.org
+      System-provided. The build detected here is configured with --enable-gpl
+      --enable-version3, making it effectively GPL-3.0. ffmpeg can also be built
+      LGPL; your distro's build determines the terms. Invoked as a subprocess.
+
+  ImageMagick (convert/magick)   ImageMagick License (Apache-2.0-compatible)
+      https://imagemagick.org/script/license.php  — system-provided; used for
+      content heuristics in `-m auto`. Invoked as a subprocess.
+
+  nvidia-smi   NVIDIA proprietary (part of the NVIDIA driver)
+      System-provided; queried read-only for GPU telemetry. Not redistributed;
+      no NVIDIA software is shipped with this project.
+
+
+4. PRE-TRAINED MODEL WEIGHTS (downloaded at setup; licensed separately from code)
+--------------------------------------------------------------------------------
+Model weights carry their own license, independent of the inference code.
+
+  RealESRGAN_x4plus.pth          BSD-3-Clause
+  RealESRGAN_x2plus.pth          BSD-3-Clause
+  RealESRGAN_x4plus_anime_6B.pth BSD-3-Clause
+      Source: https://github.com/xinntao/Real-ESRGAN releases (v0.1.0 / v0.2.2.4)
+
+  GFPGANv1.3.pth                 Apache-2.0
+      Source: https://github.com/TencentARC/GFPGAN releases
+
+  detection_Resnet50_Final.pth   Apache-2.0  (facexlib face detection)
+  parsing_parsenet.pth           Apache-2.0  (facexlib face parsing)
+      Source: https://github.com/xinntao/facexlib releases
+      Auto-downloaded into gfpgan/weights/ on first face-restoration run.
+
+  RealCUGAN, realesr-animevideov3, RIFE (rife-v4) NCNN models
+      Bundled inside the video2x AppImage (see §3); governed by their upstream
+      licenses (RealCUGAN: MIT; RIFE: MIT / research terms — verify per model
+      before commercial use). Not redistributed by this repository.
+
+Note: some model weights carry acceptable-use or research-only nuances upstream.
+The weights inventoried above are released under permissive terms (BSD-3 /
+Apache-2.0) by their authors, but confirm the current upstream license before
+relying on any specific checkpoint for commercial output.
+
+
+TRADEMARKS
+----------
+"Real-ESRGAN", "GFPGAN", "Video2X", "NVIDIA", "FFmpeg", and "ImageMagick" are
+the marks of their respective owners. Their use here is nominative (to identify
+the components driven by this tool) and does not imply endorsement or affiliation.

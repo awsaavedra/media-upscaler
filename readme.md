@@ -136,6 +136,12 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 - **Keyboard preset picker (deferred).** `P` currently cycles `low → medium → high → xhigh` (works, discoverable via footer + log). A `PresetModal` number-key picker was built but reverted: it renders on open yet throws `AttributeError: 'str' object has no attribute 'render_strips'` on a later/teardown render under Textual 8.2.7 (Help/Options/Dir modals are unaffected — root cause not yet isolated). Revisit when the TUI snapshot harness below lands, or after a Textual bump.
 - **Investigate a high-fidelity TUI test harness.** Current TUI coverage is unit-level (`scripts/test_tui.py`: pure helpers + headless `run_test` smoke) plus a manual plan in `test.sh` (§31–48). Evaluate snapshot/interaction harnesses to catch visual + reactive regressions automatically: `pytest-textual-snapshot` (SVG snapshot diffs), Textual `Pilot` (scripted key/click drives), and terminal-capture tools (e.g. `tuitest`/`pexpect`). Goal: assert "every action produces a visible reaction" (rules.md #10) in CI without a GPU.
 
+## License & third-party notices
+- **License:** MIT — see [LICENSE](LICENSE). Provided **AS IS**, without warranty of any kind; the authors are not liable for any claim or damages arising from use.
+- **Use at your own risk:** this tool runs your GPU under sustained load, may run for hours, and **overwrites files in the output directory**. Verify inputs/outputs before long batch jobs.
+- **Third-party components:** media-upscaler bundles nothing — `scripts/setup.sh` fetches all engines, Python deps, and model weights onto your machine, and ffmpeg/ImageMagick/the NVIDIA driver are system-provided. Their licenses (including the **GPL-3.0** video2x AppImage and this GPL build of ffmpeg) attach to your local install, not to this project's source; by running setup you fetch and inherit them directly from upstream. Full inventory with sources and SPDX licenses: [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
+- **Model weights** are licensed separately from the code (BSD-3 / Apache-2.0 for the bundled defaults); confirm the upstream terms before relying on any checkpoint for commercial output.
+
 ## Out of scope
 - Cloud upscaling services
 - GUI tools (Upscayl, Chainner)
