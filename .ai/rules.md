@@ -11,3 +11,4 @@
 8. UI controls must be discoverable: every key/action visibly labeled in-app (footer + `?` help). Generate hints from ONE binding source so footer/help can never drift from real bindings.
 9. Textual async workers (`@work(thread=False)`) run on the app thread — never call `call_from_thread` there; update widgets directly. Use `call_from_thread` only from real threads (`thread=True`).
 10. Valve's rule: every user action produces a visible reaction. No dead inputs; long work shows live progress/elapsed so state is never ambiguous.
+11. Calculations go through Python — one centralized, regularized, testable calc environment. Shell orchestrates; Python computes. No awk float math or bash arithmetic beyond plain integer threshold comparisons (`[ "$x" -ge N ]`). Wrap embedded `python3 -c` in `set -e` substitutions failure-tolerantly: `$( { python3 -c '…' 2>/dev/null; } || true )`.

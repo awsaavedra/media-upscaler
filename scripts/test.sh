@@ -73,6 +73,48 @@ assert_image() {
     || fail "$desc — expected ${expected_dims}, got ${dims}"
 }
 
+# Full-reference quality metrics (PSNR/SSIM vs ground truth) for the upscaled output.
+# Scope is deliberately small (the two tiny Set5 benchmark images) so the quality gate
+# stays inside the 4 GB / RTX 3050 Mobile budget — see roadmap v2.x.
+#
+# The METRIC is absolute (hardware-independent). The PASS THRESHOLD is per-tier/per-task:
+# each invocation supplies the minimum absolute PSNR/SSIM appropriate to the tier it ran,
+# so a low-end box running a low tier passes against the low bar — it is not failed for
+# not matching a high-tier result. Enforced minimums start conservative (catch a broken
+# pipeline — blank/noise/wrong output) and tighten toward the docs/test-plan.md literature
+# targets once a real GPU baseline calibrates them. Real-ESRGAN is a GAN that trades PSNR
+# for perceptual sharpness, so the literature targets are shown but not yet the gate.
+METRICS_PY="$PROJECT_ROOT/tools/realesrgan/venv/bin/python"
+QUALITY_SCRIPT="$SCRIPT_DIR/quality-metrics.py"
+
+# assert_quality DESC OUTPUT GT MIN_PSNR MIN_SSIM TARGET_PSNR
+#   MIN_*       — enforced absolute pass bar for the tier that produced OUTPUT
+#   TARGET_PSNR — literature goal (informational until calibrated on GPU)
+assert_quality() {
+  local desc="$1" out="$2" gt="$3" min_psnr="$4" min_ssim="$5" target="$6"
+  if [ ! -x "$METRICS_PY" ] || [ ! -f "$QUALITY_SCRIPT" ]; then
+    skip "$desc — metrics tool unavailable (run scripts/setup.sh)"; return
+  fi
+  if [ ! -f "$out" ] || [ ! -f "$gt" ]; then
+    skip "$desc — output or GT missing"; return
+  fi
+  local result rc
+  result=$("$METRICS_PY" "$QUALITY_SCRIPT" --json \
+            --min-psnr "$min_psnr" --min-ssim "$min_ssim" \
+            "$gt" "$out" 2>/dev/null) && rc=0 || rc=$?
+  if [ "$rc" -eq 2 ] || [ -z "$result" ]; then
+    fail "$desc — metric computation error"; return
+  fi
+  local psnr ssim
+  psnr=$(printf '%s' "$result" | python3 -c "import json,sys;print(json.load(sys.stdin)['psnr_db'])" 2>/dev/null)
+  ssim=$(printf '%s' "$result" | python3 -c "import json,sys;print(json.load(sys.stdin)['ssim'])" 2>/dev/null)
+  if [ "$rc" -eq 1 ]; then
+    fail "$desc — below tier bar: PSNR ${psnr} (need ≥${min_psnr}), SSIM ${ssim} (need ≥${min_ssim})"
+    return
+  fi
+  ok "$desc — PSNR ${psnr} dB, SSIM ${ssim} (tier bar ≥${min_psnr}/${min_ssim}; target ≥${target} dB)"
+}
+
 # ─── 1. GPU CHECKS ─────────────────────────────────────────────────────────────
 printf '\n── GPU checks ──\n'
 gpu_ec=0
@@ -331,6 +373,16 @@ printf '%s' "$VDRY_UH" | grep -qE '\-s 4\b' \
   && ok "video -q xhigh: scale is 4x" \
   || fail "video -q xhigh: expected -s 4 in command — got: $VDRY_UH"
 
+# -q auto: hardware-adaptive tier. Resolution depends on the box (GPU/VRAM/RAM), so the
+# assertion is environment-agnostic: it must emit an [auto] line, resolve to one of the five
+# concrete presets, and exit 0 (a no-GPU box degrades to 'low', a GPU box slides by VRAM).
+VAUTO_ERR=$(scripts/upscale-video.sh -q auto -n test-assets/videos/test-clip.mp4 /tmp/out.mp4 2>&1 >/dev/null)
+printf '%s' "$VAUTO_ERR" | grep -qE '\[auto\].* -q (low|fast|medium|high|xhigh)$' \
+  && ok "video -q auto: resolves to a concrete tier — ${VAUTO_ERR##*→ }" \
+  || fail "video -q auto: no valid tier resolution — got: $VAUTO_ERR"
+assert_exit "video: -q auto accepted (dry run, exit 0)" 0 \
+  scripts/upscale-video.sh -q auto -n test-assets/videos/test-clip.mp4 /tmp/out.mp4
+
 # -D / -I / -T flags must be accepted (exit 0) by dry-run.
 assert_exit "video: -D dedup flag accepted (-q low dry run)"            0 \
   scripts/upscale-video.sh -q low -D -n \
@@ -427,6 +479,9 @@ if [ "$INTEGRATION" -eq 1 ]; then
     assert_image \
       "butterfly: RealESRGAN_x2plus 128×128 → 256×256 (fine texture, 2x benchmark)" \
       "$_T/butterfly_out.png" "256x256" 80
+    assert_quality \
+      "butterfly: quality vs GT (low/2x tier)" \
+      "$_T/butterfly_out.png" "test-assets/images/gt/butterfly.png" 24 0.70 28
   else
     fail "butterfly: RealESRGAN_x2plus inference exited non-zero"
   fi
@@ -446,6 +501,9 @@ if [ "$INTEGRATION" -eq 1 ]; then
     assert_image \
       "baby: RealESRGAN_x4plus 128×128 → 512×512 (face / smooth gradient)" \
       "$_T/baby_out.png" "512x512" 200
+    assert_quality \
+      "baby: quality vs GT (medium/4x tier)" \
+      "$_T/baby_out.png" "test-assets/images/gt/baby.png" 24 0.60 32
   else
     fail "baby: RealESRGAN_x4plus inference exited non-zero"
   fi

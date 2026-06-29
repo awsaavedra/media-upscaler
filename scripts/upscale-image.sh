@@ -13,6 +13,7 @@ BATCH=0
 DRY_RUN=0
 JSON_OUT=0
 _TILE_EXPLICIT=0   # set to 1 if -t is passed; suppresses VRAM auto-tile
+QUALITY_AUTO=0     # set to 1 by -q auto; tier resolved from free VRAM after the probe
 
 REALESRGAN_DIR="${REALESRGAN_DIR:-$PROJECT_ROOT/tools/realesrgan}"
 INFERENCE_SCRIPT="$REALESRGAN_DIR/inference_realesrgan.py"
@@ -23,11 +24,12 @@ usage() {
   printf '  No args: sweeps test-assets/images/ → output/images/ (skips gt/ dirs)\n'
   printf '  INPUT   image file or directory (directories recurse, skipping gt/)\n'
   printf '  OUTPUT  output directory (default: output/images/)\n'
-  printf '  -q  quality preset: low | medium | high | xhigh (raw flags below override preset)\n'
+  printf '  -q  quality preset: low | medium | high | xhigh | auto (raw flags below override preset)\n'
   printf '        low       2x  RealESRGAN_x2plus  no-face  tile=256  fast, ~1/4 VRAM\n'
   printf '        medium    4x  RealESRGAN_x4plus  no-face  tile=512  default\n'
   printf '        high      4x  RealESRGAN_x4plus  face     tile=512  portraits/archival\n'
   printf '        xhigh 4x  RealESRGAN_x4plus  face     tile=0    max quality, full VRAM\n'
+  printf '        auto      slide tier by free VRAM: <4G low, 4-8G medium, 8-12G high, >=12G xhigh\n'
   printf '  -s  upscale factor integer (default: 4)\n'
   printf '  -m  model name or /abs/path/to/model.pth (default: RealESRGAN_x4plus)\n'
   printf '  -f  output format: png | jpg | webp (default: png)\n'
@@ -46,7 +48,8 @@ while getopts ':q:s:m:f:t:Fbjnh' opt; do
          medium)    SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=0; TILE=512 ;;
          high)      SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=512 ;;
          xhigh) SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=0   ;;
-         *) printf 'Unknown preset: %s  (low|medium|high|xhigh)\n' "$OPTARG" >&2; exit 1 ;;
+         auto)      QUALITY_AUTO=1 ;;  # resolved from free VRAM after the probe below
+         *) printf 'Unknown preset: %s  (low|medium|high|xhigh|auto)\n' "$OPTARG" >&2; exit 1 ;;
        esac ;;
     s) SCALE=$OPTARG ;;
     m) MODEL=$OPTARG ;;
@@ -85,6 +88,24 @@ esac
 # Boundary checks — fail fast
 nvidia-smi >/dev/null 2>&1 \
   || { printf 'GPU not accessible — nvidia-smi failed\n' >&2; exit 2; }
+
+# -q auto: hardware-adaptive quality tier. VRAM is the binding constraint for inference
+# feasibility, so free VRAM slides the tier low→medium→high→xhigh. Breakpoints mirror the
+# VRAM→tile map below (4/8/12 GiB) so the gradient is consistent across the script. The
+# tier owns scale/model/face/tile; _TILE_EXPLICIT is set so the generic remap below is skipped.
+if [ "$QUALITY_AUTO" -eq 1 ]; then
+  _AUTO_FREE=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null \
+    | head -1 | tr -d ' ')
+  case $_AUTO_FREE in ''|*[!0-9]*) _AUTO_FREE=0 ;; esac
+  if   [ "$_AUTO_FREE" -ge 12288 ]; then _TIER=xhigh;  SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=0
+  elif [ "$_AUTO_FREE" -ge 8192  ]; then _TIER=high;   SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=1; TILE=512
+  elif [ "$_AUTO_FREE" -ge 4096  ]; then _TIER=medium; SCALE=4; MODEL=RealESRGAN_x4plus; FACE_ENHANCE=0; TILE=512
+  else                                   _TIER=low;    SCALE=2; MODEL=RealESRGAN_x2plus; FACE_ENHANCE=0; TILE=256
+  fi
+  _TILE_EXPLICIT=1
+  printf '[auto] %s MiB free VRAM → -q %s (scale=%s model=%s face=%s tile=%s)\n' \
+    "$_AUTO_FREE" "$_TIER" "$SCALE" "$MODEL" "$FACE_ENHANCE" "$TILE" >&2
+fi
 
 # VRAM probe → auto tile size (skipped if -t was explicit or DRY_RUN)
 if [ "$_TILE_EXPLICIT" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then

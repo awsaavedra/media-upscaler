@@ -130,6 +130,7 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 - CLI-first: no GUI dependencies; every tool composable via shell
 - Fail fast: all boundary validation at script entry; errors to stderr with non-zero exit
 - Model-agnostic: wrappers accept any `.pth` file path; no model names hardcoded in logic
+- Centralized calculation: all numeric logic lives in **Python** — one regularized, testable source of truth. Shell scripts orchestrate; Python computes. No awk float math or bash arithmetic beyond plain integer threshold comparisons. `perf-estimate.py` / `quality-metrics.py` are the seed of this calc layer; consolidate new math there over time.
 
 ## TODO
 - **Test setup/teardown should leave only images for visual review.** After a run, `output/` keeps `.progress.json` and `.audit.json` sidecars beside the media; `teardown.sh` only clears `output/images/test-results/`. Add a sweep (or have scripts delete `.progress.json` on clean exit) so the only generated artifacts left to eyeball are the images themselves (png/jpg/webp).

@@ -35,6 +35,8 @@ usage() {
   printf '        medium    RealCUGAN 2x              Vulkan    ~45 min/30 s    recommended\n'
   printf '        high      Real-ESRGAN 4x            Vulkan    ~2 h/30 s       best quality\n'
   printf '        xhigh Real-ESRGAN 4x            NVENC out ~2 h/30 s       max quality\n'
+  printf '        auto      slide tier by free VRAM/RAM: no-GPU→low, <1G→low, 1-4G→fast,\n'
+  printf '                  4-8G→medium, 8-12G→high, >=12G→xhigh (held 1 notch lower if RAM<2G)\n'
   printf '\n'
   printf '  -s  override scale factor integer (overrides the -q scale)\n'
   printf '  -e  override engine: realesrgan | realcugan | anime4k (overrides the -q engine)\n'
@@ -74,10 +76,51 @@ shift $((OPTIND - 1))
 INPUT=${1:?'INPUT required — path to source video'}
 OUTPUT=${2:?'OUTPUT required — path for upscaled video'}
 
+# -q auto: hardware-adaptive tier. Mirrors upscale-image.sh's gradient but maps onto the
+# video preset ladder. Two video-specific constraints the image path doesn't have:
+#   1. No usable GPU → degrade to the CPU 'low' (ffmpeg-lanczos) preset, the only no-GPU path.
+#   2. RAM headroom — dedup/chunk/NVENC stage large lossless temp files; under ~2 GiB free RAM
+#      hold the tier one AI notch lower so the box doesn't thrash mid-encode.
+# Resolved to a concrete preset here, before validation, so the rest of the script (including
+# the per-file batch recursion, which re-passes -q) sees a fixed tier and never re-probes.
+if [ "${QUALITY:-}" = "auto" ]; then
+  # Tolerate a failing nvidia-smi (no-GPU box): pipefail + set -e would otherwise abort the
+  # command substitution before we can degrade to the CPU 'low' tier. `|| true` keeps it empty.
+  _AUTO_FREE=$( { nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null \
+    | head -1 | tr -d ' '; } || true )
+  case $_AUTO_FREE in ''|*[!0-9]*) _AUTO_FREE=0 ;; esac
+  # MemAvailable is in kB; convert to MiB in Python (project rule: do arithmetic in Python,
+  # not shell/awk). Failure-tolerant so a missing /proc/meminfo can't abort under set -e.
+  _AUTO_RAM=$( { python3 -c "
+import re,sys
+m=re.search(r'^MemAvailable:\s+(\d+)',open('/proc/meminfo').read(),re.M)
+print(int(m.group(1))//1024 if m else 0)
+" 2>/dev/null; } || true )
+  case $_AUTO_RAM in ''|*[!0-9]*) _AUTO_RAM=0 ;; esac
+  if   [ "$_AUTO_FREE" -ge 12288 ]; then QUALITY=xhigh
+  elif [ "$_AUTO_FREE" -ge 8192  ]; then QUALITY=high
+  elif [ "$_AUTO_FREE" -ge 4096  ]; then QUALITY=medium
+  elif [ "$_AUTO_FREE" -ge 1024  ]; then QUALITY=fast
+  else                                   QUALITY=low
+  fi
+  # RAM guard: drop one AI notch under ~2 GiB free RAM. 'low' (CPU) is already the floor.
+  _AUTO_RAM_NOTE=""
+  if [ "$_AUTO_RAM" -gt 0 ] && [ "$_AUTO_RAM" -lt 2048 ]; then
+    case $QUALITY in
+      xhigh)  QUALITY=high ;;
+      high)   QUALITY=medium ;;
+      medium) QUALITY=fast ;;
+    esac
+    _AUTO_RAM_NOTE=" (RAM ${_AUTO_RAM} MiB < 2048 → held one notch lower)"
+  fi
+  printf '[auto] %s MiB free VRAM, %s MiB free RAM → -q %s%s\n' \
+    "$_AUTO_FREE" "$_AUTO_RAM" "$QUALITY" "$_AUTO_RAM_NOTE" >&2
+fi
+
 # Validate quality
 case ${QUALITY:-medium} in
   fast|low|medium|high|xhigh) ;;
-  *) printf 'QUALITY must be fast, low, medium, high, or xhigh, got: %s\n' "$QUALITY" >&2; exit 1 ;;
+  *) printf 'QUALITY must be fast, low, medium, high, xhigh, or auto, got: %s\n' "$QUALITY" >&2; exit 1 ;;
 esac
 
 # Validate thermal mode
