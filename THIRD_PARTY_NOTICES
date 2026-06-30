@@ -49,6 +49,10 @@ of a derived/bundled artifact.
   torchvision              BSD-3-Clause  https://github.com/pytorch/vision
   numpy                    BSD-3-Clause  https://github.com/numpy/numpy
   scipy                    BSD-3-Clause  https://github.com/scipy/scipy
+  opencv-python (cv2)      Apache-2.0    https://github.com/opencv/opencv-python
+  scikit-image             BSD-3-Clause  https://github.com/scikit-image/scikit-image
+  Pillow                   MIT/HPND      https://github.com/python-pillow/Pillow
+  lpips (optional)         BSD-2-Clause  https://github.com/richzhang/PerceptualSimilarity
   (plus their transitive dependencies, each under its own permissive license)
 
 

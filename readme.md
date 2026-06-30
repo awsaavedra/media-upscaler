@@ -10,7 +10,7 @@ AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 30
 | **v0** | ✅ shipped (`v0`) | Core scripts, `-q` presets, Rich monitor, perf estimator, GPU check, test suite |
 | **v2-prep** | ✅ shipped (`v2-prep`) | Image `-q` presets, Textual TUI skeleton, audio stub |
 | **v1** | ✅ shipped (`v1.0`) | Chunked resume, calibration probe, integrity check, VRAM auto-tile, `-q fast`, batch dirs |
-| **v2** | 🟡 in progress | Textual TUI with full CLI parity (presets, options modal, sidecar reattach, adaptive ETA) — pending: throttle warning, TensorRT, NVENC, dedup |
+| **v2** | 🟡 in progress | Textual TUI with full CLI parity (presets, options modal, sidecar reattach, adaptive ETA, throttle warning, xhigh/dedup/interpolate); stabilizing via /ship gate |
 | **v3** | 🔵 planned | Rust rewrite — ratatui TUI, zero-copy pipeline, same feature parity |
 | **v4** | 🔵 planned | Audio upscaling (RNNoise / DeepFilterNet / AudioSR) |
 
@@ -78,6 +78,8 @@ Subdirectories under `input/images/` show as `📁` folders with their files ind
 | `low` | ffmpeg lanczos | 2× | no | ~seconds | smooth interpolation, no AI detail |
 | `medium` *(default)* | RealCUGAN | 2× | yes | ~2 min/10 s (320×180) | AI-enhanced, good balance |
 | `high` | Real-ESRGAN | 4× | yes | ~2 h/30 s | best quality, highest VRAM use |
+| `xhigh` | Real-ESRGAN + NVENC | 4× | yes | ~2 h/30 s | max quality; h264_nvenc re-encode |
+| `auto` | — (slides by VRAM) | — | adaptive | — | resolves to one of the above at runtime |
 
 Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` for ffmpeg at 4×).
 
@@ -91,6 +93,7 @@ Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` f
 │   ├── test.sh                         # test suite; --integration enables full tests
 │   ├── download-test-media.sh          # fetches public-domain test media → test-assets/
 │   ├── perf-estimate.py                # hardware throughput estimator; --video/--target/--list-hw
+│   ├── quality-metrics.py              # full-reference PSNR/SSIM/LPIPS harness; exit 0/1/2
 │   ├── tui-monitor.py                  # legacy Rich monitor (video-only, superseded by tui.py)
 │   └── tui.py                          # Textual TUI — primary interface; entry point: ./tool tui
 ├── docs/
