@@ -241,6 +241,62 @@ Concrete, ordered follow-ups that finish the quality-gate epic. Status: ☐ not 
 3. **◧ Calibrate per-tier thresholds against a real GPU baseline.** **Baseline recorded 2026-06-28** (RTX 3050 Mobile, real Real-ESRGAN inference — see the table under "Per-tier absolute quality thresholds" above): butterfly 24.731 dB / 0.8714, baby 24.410 dB / 0.7347. **Outcome:** measured PSNR lands far below the literature targets purely from the GAN tradeoff, so promoting the bars to those PSNR targets would wrongly fail good output. **Remaining:** add LPIPS and re-calibrate any threshold tightening against the perceptual metric, not PSNR. Enforced bars stay conservative until then.
 4. **☐ Wire `assert_quality` for the video path.** Extend the harness with a short-clip frame-extract → `quality-metrics.py` comparison so the video gate matches the image gate (still inside the 4 GB / one-short-clip budget).
 
+#### Ship-gate audit findings (2026-07-01) — pre-publish debt
+
+Second `/ship` pass, stages 2–4, returned **GO-able**: functional 57/0/23, no hard
+blockers, and the PII blocker was resolved this session (personal email scrubbed from
+`CODE_OF_CONDUCT.md`/`SECURITY.md` and from git history; force-pushed to the private
+origin). The items below are the accepted quality / supply-chain / docs debt to clear
+before — or knowingly accept at — the first public tag. Status: ☐ not started · ◧ in
+progress · ☑ done.
+
+**Stage 2 — code quality (`/code-review`).** PASS with debt. Clean on: safe array-exec
+(`"${cmd[@]}"`), exit-code contracts (0/1/2/3), thin `tool` dispatcher, getopts fail-fast.
+
+1. **☐ Rule 11: migrate awk float math → Python.** Arithmetic (not column extraction) is
+   done in awk, violating Rule 11 + CONTRIBUTING §Architecture. Sites:
+   - `upscale-image.sh:148` — content classifier (saturation/edge float thresholds → model)
+   - `upscale-video.sh:237,239,313,323,340,342,343,350,374,589,616,643` plus fps divisions
+     `482,555,586` — bitrate, output-size estimate, dedup %, probe seek, measured fps, ETA,
+     chunk count, target fps, duration drift, A/V sync
+   - `upscale-audio.sh:113` — throughput ratio (also interpolates shell vars straight into
+     the awk program — fold into the Python calc helper)
+   Route through a Python calc module (cf. `perf-estimate.py` / `quality-metrics.py`). Pure
+   column extraction (`awk '{print $1}'` on `sha256sum`/`df`/`du`) is **not** a violation —
+   leave it. → HIGH self-consistency debt; functionally correct today, not a correctness blocker.
+2. **☐ JSON built by `printf` without escaping (correctness, MEDIUM).** Sidecars, summaries,
+   and audit manifests interpolate paths/model names via `printf %s`: `upscale-image.sh:202,209,323,342`;
+   `upscale-audio.sh:115,179`; and the `upscale-video.sh` sidecar/audit writers. A filename
+   containing `"`, `\`, or a newline yields malformed JSON the TUI then fails to parse. Emit
+   via Python `json.dumps` (or `jq`).
+3. **☐ `_infer()` is long / multi-responsibility** (`upscale-image.sh:252`, ~50 lines). Consider
+   splitting the single-file and batch paths.
+4. **☐ Audit the `-b`/BATCH flag** (`upscale-image.sh:44,59`). Not a true no-op — it sets
+   `BATCH=1`, but BATCH is also auto-derived from whether OUTPUT is a directory (`167,169`)
+   and `-b` is absent from the usage text. Confirm intent, then document or remove.
+
+**Stage 3 — security (`/security full`).** PASS on the release blocker. Clean: PII scrubbed
+(history + private remote); no shell injection (no `eval`, paths quoted, array-exec).
+
+5. **☐ Supply-chain integrity (MEDIUM, OWASP A08).** `setup.sh` fetches everything with no
+   pinning or checksum verification:
+   - `:119` Real-ESRGAN `git clone` — UNPINNED, tracks upstream HEAD at setup time → pin to a tag/commit
+   - `:75` video2x AppImage via `curl -L` — no SHA256 → add a checksum gate
+   - `:186,188` model weights (`.pth`) — no SHA256 → add a checksum gate
+   - `:141` `basicsr facexlib gfpgan` unpinned; `:144` upstream `requirements.txt`; `:153`
+     `numpy<2`/`scipy<1.13` range-pinned only → freeze / hash-pin; consider a committed lockfile + SBOM
+   torch/torchvision **are** exact-pinned (`:137`). Aligns with SECURITY.md's own "malicious
+   model weights" note — consider also disclosing this as a known limitation in SECURITY.md.
+
+**Stage 4 — docs (`/software-engineering §Documentation`).** PASS with nits.
+
+6. **☐ Empty heading `readme.md:48`** — `### Direct CLI (back-end scripts, power users)` has
+   no body; the actual direct-CLI examples live under `## Commands` (~line 53+, labelled
+   "(direct)"). Either move those examples under this heading or delete the empty heading.
+7. **☐ Title mismatch `readme.md:1`** — `# media-restoration` vs repo/remote `media-upscaler`. Align.
+8. **☐ `tool` help omits `-q auto`** (`tool:33,35`) for image & video, though the scripts and
+   README document the tier. Add `auto` to the dispatcher usage strings.
+
 **Exit gate.** v2 closes by passing the **`/ship`** release-readiness filter end-to-end (functional · quality · security · docs · governance · **legal** · release). The `/legal` stage is blocking: ship an **AS-IS, no-warranty, no-liability** disclaimer and confirm every dependency **and bundled AI model weight** (Real-ESRGAN, GFPGAN, video2x, …) is license-compatible for redistribution, with a complete `THIRD_PARTY_NOTICES`. No public release until `/ship` returns GO.
 
 ## v3.0 — Rust rewrite (primary goal: speed)
