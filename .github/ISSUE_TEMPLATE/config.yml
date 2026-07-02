@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/awsaavedra/media-upscaler/security/advisories/new
+    about: Do not open a public issue. Report privately via GitHub Security Advisories (see SECURITY.md).
+  - name: Report a Code of Conduct concern
+    url: https://github.com/awsaavedra/media-upscaler/security/advisories/new
+    about: Report conduct concerns privately through the advisory form (see CODE_OF_CONDUCT.md).

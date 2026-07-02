@@ -16,6 +16,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **TUI `📁` file-browser subdir view**: indented file listing within subdirectory rows
 - **TUI auto-open output folder** on batch completion (`xdg-open` on Linux, `open` on macOS)
 - **Governance files**: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`
+- **`.github/` templates**: bug-report and feature-request issue templates, pull-request template, and `config.yml` routing security and conduct reports to the private GitHub advisory channel
 - **Project skills suite** (`.ai/`): ship, legal, release-engineering, governance, security, code-review, and others
 - Rule 11 in `.ai/rules.md` and design principle in README: all numeric logic routes through Python (centralized, testable calc layer)
 
