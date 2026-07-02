@@ -17,7 +17,7 @@ Pick one; put `LICENSE` at the repo root; add SPDX headers (`SPDX-License-Identi
 | Share-alike for distributed binaries | GPL-3.0 |
 | Share-alike incl. network / SaaS use | AGPL-3.0 |
 
-Rules: the license must be **compatible with every dependency's** license — copyleft is viral, pulling GPL into a permissive project relicenses the combination · one canonical license · don't invent or edit license terms · **not legal advice — route licensing / patent / trademark questions to counsel.**
+Rules: the license must be **compatible with every dependency's** license — copyleft is viral, pulling GPL into a permissive project relicenses the combination · one canonical license · don't invent or edit license terms · **not legal advice — route licensing / patent / trademark questions to counsel.** For the protective boilerplate *around* the license (AS-IS / warranty disclaimer, liability cap, NOTICE / attribution, trademark reservation) see `legal`.
 
 ## Community-health files
 - `README` — what / why, install, quickstart, license, links (see `software-engineering` §Documentation).
@@ -25,6 +25,8 @@ Rules: the license must be **compatible with every dependency's** license — co
 - `CODE_OF_CONDUCT.md` — adopt Contributor Covenant; name an enforcement contact.
 - `SECURITY.md` — supported versions + the **private** reporting channel (see disclosure below).
 - `.github/` — issue + PR templates, `CODEOWNERS` for review routing.
+
+**Contacts:** every address you list here is public and permanent. Use a role / project channel (`security@…`, an org, an alias), **never a maintainer's personal email** (and never one auto-pulled from git config / session context) — when none exists, ask rather than default → `privacy`.
 
 ## Contribution licensing
 Inbound = outbound by default (contributions under the project license). For provenance pick one and state it in `CONTRIBUTING`: **DCO** (`Signed-off-by`, lightweight) or **CLA** (explicit grant, higher friction).

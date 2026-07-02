@@ -297,7 +297,7 @@ progress · ☑ done.
 8. **☐ `tool` help omits `-q auto`** (`tool:33,35`) for image & video, though the scripts and
    README document the tier. Add `auto` to the dispatcher usage strings.
 
-**Exit gate.** v2 closes by passing the **`/ship`** release-readiness filter end-to-end (functional · quality · security · docs · governance · **legal** · release). The `/legal` stage is blocking: ship an **AS-IS, no-warranty, no-liability** disclaimer and confirm every dependency **and bundled AI model weight** (Real-ESRGAN, GFPGAN, video2x, …) is license-compatible for redistribution, with a complete `THIRD_PARTY_NOTICES`. No public release until `/ship` returns GO.
+**Exit gate.** v2 closes by passing the **`/ship`** release-readiness filter end-to-end (functional · quality · security · docs · governance · **legal** · **privacy** · release). The `/legal` stage is blocking: ship an **AS-IS, no-warranty, no-liability** disclaimer and confirm every dependency **and bundled AI model weight** (Real-ESRGAN, GFPGAN, video2x, …) is license-compatible for redistribution, with a complete `THIRD_PARTY_NOTICES`. The `/privacy` stage is likewise blocking: sweep every published surface (contacts in `SECURITY.md` / `CODE_OF_CONDUCT.md` / README, package `author` / `maintainer` fields, commit-author identity, example / fixture data) for personal identifiers, and confirm each uses a role / project channel rather than a maintainer's personal email — **known open item:** this repo's git history carries a personal Gmail as commit-author, which the privacy stage must resolve (role alias or history rewrite) before going public. No public release until `/ship` returns GO.
 
 ## v3.0 — Rust rewrite (primary goal: speed)
 

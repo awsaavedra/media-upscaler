@@ -131,6 +131,8 @@ Use STRIDE before implementation or during architecture review.
 
 **Pre-publish / post-leak.** Before a repo goes public — or after any exposure — scan *full* git history, not just the working tree (`git log -p`, `gitleaks`, `trufflehog`). On a hit, **rotate the credential first**: a history rewrite (`git-filter-repo` / BFG) never reaches existing forks, clones, mirrors, or caches. Publishing is irreversible — an indexed secret is burned regardless of later rewrites.
 
+**Scope note.** This detects sensitive data that *already exists* (history, code, logs) — including PII (commit-author emails, personal data in fixtures). Whether a personal identifier *should be published at all* — contacts, author fields, minimization, consent — is preventive and belongs to `privacy` (applied at authoring time). PII has no "rotate": deletion never reaches forks or indexes.
+
 ## Compliance
 
 | Framework | Key Checks |
