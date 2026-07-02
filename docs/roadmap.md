@@ -297,6 +297,22 @@ progress · ☑ done.
 8. **☐ `tool` help omits `-q auto`** (`tool:33,35`) for image & video, though the scripts and
    README document the tier. Add `auto` to the dispatcher usage strings.
 
+**Stage 6 — legal (`/legal`), post privacy-skill port (2026-07-01).** Ship gate restructured:
+ported the `privacy` skill from `configs/.ai`, kept **Legal standalone** (stage 6) and inserted
+**Privacy** (stage 7) — a deliberate divergence from `configs` (which folds legal into the
+Governance stage). Decision B (Legal stays first-class) is settled; `legal/SKILL.md`'s
+self-reference was corrected to "Owns the ship gate's legal stage."
+
+9. **☐ Rehome the AI-model-weight / dependency-license gate (discuss next session).**
+   `legal/SKILL.md` was overwritten with the `configs` "protective boilerplate" rewrite, which
+   **dropped** the model-weight + dependency-license compliance depth — yet the Legal stage and
+   this project's shipped `THIRD_PARTY_NOTICES` still rely on it (GPL video2x, Real-ESRGAN,
+   GFPGAN, … mixed licenses), so stage 6 now promises a check the skill no longer describes. The
+   gate is load-bearing here. **Don't just paste the old content back** — pick the right home:
+   (a) merge the model-weight + dep-license section back into `legal`; (b) split it into a
+   distinct third-party-license-compliance concern (arguably nearer `governance`'s
+   dependency-license-compat check than `legal`'s disclaimer boilerplate); (c) other. TBD.
+
 **Exit gate.** v2 closes by passing the **`/ship`** release-readiness filter end-to-end (functional · quality · security · docs · governance · **legal** · **privacy** · release). The `/legal` stage is blocking: ship an **AS-IS, no-warranty, no-liability** disclaimer and confirm every dependency **and bundled AI model weight** (Real-ESRGAN, GFPGAN, video2x, …) is license-compatible for redistribution, with a complete `THIRD_PARTY_NOTICES`. The `/privacy` stage is likewise blocking: sweep every published surface (contacts in `SECURITY.md` / `CODE_OF_CONDUCT.md` / README, package `author` / `maintainer` fields, commit-author identity, example / fixture data) for personal identifiers, and confirm each uses a role / project channel rather than a maintainer's personal email — **known open item:** this repo's git history carries a personal Gmail as commit-author, which the privacy stage must resolve (role alias or history rewrite) before going public. No public release until `/ship` returns GO.
 
 ## v3.0 — Rust rewrite (primary goal: speed)

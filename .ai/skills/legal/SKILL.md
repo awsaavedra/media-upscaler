@@ -1,7 +1,7 @@
 ---
 name: legal
 description: Open-source protective boilerplate — warranty disclaimers, limitation of liability, "AS IS" language, NOTICE / attribution, trademark & endorsement reservation, export / high-risk / dual-use disclaimers. Drafts standard clauses; never bespoke legal advice. Triggers: /legal · "as is" · "no warranty" · "disclaimer" · "not responsible for your use" · "use at your own risk" · "limitation of liability" · "NOTICE file" · "trademark". Pairs with `governance` (which picks the license).
-when_to_use: Adding the protective language around a public release — disclaimers, liability caps, attribution, reservations. Distinct from `governance` (license *selection* + community-health files) and `software-engineering` §Documentation (README accuracy). Feeds the `ship` gate's governance stage. NOT legal advice — see the hard boundary below.
+when_to_use: Adding the protective language around a public release — disclaimers, liability caps, attribution, reservations. Distinct from `governance` (license *selection* + community-health files) and `software-engineering` §Documentation (README accuracy). Owns the `ship` gate's legal stage. NOT legal advice — see the hard boundary below.
 ---
 
 # Legal
