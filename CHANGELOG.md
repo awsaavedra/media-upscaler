@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v2.1.0 candidate
+## [2.1.0] — 2026-07-06
 
 ### Added
 - **`-q auto` hardware-adaptive tier** (image + video): selects quality preset from free VRAM at runtime; video path also guards on free RAM and degrades gracefully on no-GPU boxes
