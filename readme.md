@@ -1,4 +1,4 @@
-# media-restoration
+# media-upscaler
 
 ## Project
 AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 3050–3060 Ti, 32 GB RAM) — a free, private alternative to cloud/subscription upscalers for restoring old photos and footage. Primary interface is an interactive TUI; shell scripts are the processing back-end.
@@ -10,7 +10,7 @@ AI-upscale low-res images and video entirely on your own machine (Ubuntu, RTX 30
 | **v0** | ✅ shipped (`v0`) | Core scripts, `-q` presets, Rich monitor, perf estimator, GPU check, test suite |
 | **v2-prep** | ✅ shipped (`v2-prep`) | Image `-q` presets, Textual TUI skeleton, audio stub |
 | **v1** | ✅ shipped (`v1.0`) | Chunked resume, calibration probe, integrity check, VRAM auto-tile, `-q fast`, batch dirs |
-| **v2** | 🟡 in progress | Textual TUI with full CLI parity (presets, options modal, sidecar reattach, adaptive ETA, throttle warning, xhigh/dedup/interpolate); stabilizing via /ship gate |
+| **v2** | ✅ shipped (`v2.1.0`) | Textual TUI with full CLI parity (presets, options modal, sidecar reattach, adaptive ETA, throttle warning, xhigh/dedup/interpolate) |
 | **v3** | 🔵 planned | Rust rewrite — ratatui TUI, zero-copy pipeline, same feature parity |
 | **v4** | 🔵 planned | Audio upscaling (RNNoise / DeepFilterNet / AudioSR) |
 
@@ -44,8 +44,6 @@ Subdirectories under `input/images/` show as `📁` folders with their files ind
 | `o` | Options — set scale, model, format, tile, face, engine overrides |
 | `d` | Change input directory |
 | `q` | Quit |
-
-### Direct CLI (back-end scripts, power users)
 
 ## Stack
 - Bash, Python 3.12; NVIDIA driver ≥ 525, CUDA 11.8+

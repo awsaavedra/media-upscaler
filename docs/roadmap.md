@@ -303,17 +303,21 @@ ported the `privacy` skill from `configs/.ai`, kept **Legal standalone** (stage 
 Governance stage). Decision B (Legal stays first-class) is settled; `legal/SKILL.md`'s
 self-reference was corrected to "Owns the ship gate's legal stage."
 
-9. **☐ Rehome the AI-model-weight / dependency-license gate (discuss next session).**
-   `legal/SKILL.md` was overwritten with the `configs` "protective boilerplate" rewrite, which
+9. **☑ Rehomed the AI-model-weight / dependency-license gate → option (a): back into `legal` (2026-07-04).**
+   `legal/SKILL.md` had been overwritten with the `configs` "protective boilerplate" rewrite, which
    **dropped** the model-weight + dependency-license compliance depth — yet the Legal stage and
    this project's shipped `THIRD_PARTY_NOTICES` still rely on it (GPL video2x, Real-ESRGAN,
-   GFPGAN, … mixed licenses), so stage 6 now promises a check the skill no longer describes. The
-   gate is load-bearing here. **Don't just paste the old content back** — pick the right home:
-   (a) merge the model-weight + dep-license section back into `legal`; (b) split it into a
-   distinct third-party-license-compliance concern (arguably nearer `governance`'s
-   dependency-license-compat check than `legal`'s disclaimer boilerplate); (c) other. TBD.
+   GFPGAN, … mixed licenses), so stage 6 had been promising a check the skill no longer described.
+   The gate is load-bearing here. **Resolution:** recovered the dropped depth from the pre-overwrite
+   version (commit `9973d08`) and merged it back into `legal` — added `## Third-party license
+   obligations (inbound)` + `## AI model weights — licensed separately from code` sections, restored
+   the `Dependency terms` / `Model weights` rows in the Output block, and re-added the model-weight /
+   dep-license scope to the frontmatter description + when_to_use. Integrated into the current
+   boilerplate structure, not a verbatim revert. Option (b) (rehoming toward `governance`) was
+   weighed and rejected — keeping the inbound-license gate beside the disclaimer keeps stage 6
+   self-contained.
 
-**Exit gate.** v2 closes by passing the **`/ship`** release-readiness filter end-to-end (functional · quality · security · docs · governance · **legal** · **privacy** · release). The `/legal` stage is blocking: ship an **AS-IS, no-warranty, no-liability** disclaimer and confirm every dependency **and bundled AI model weight** (Real-ESRGAN, GFPGAN, video2x, …) is license-compatible for redistribution, with a complete `THIRD_PARTY_NOTICES`. The `/privacy` stage is likewise blocking: sweep every published surface (contacts in `SECURITY.md` / `CODE_OF_CONDUCT.md` / README, package `author` / `maintainer` fields, commit-author identity, example / fixture data) for personal identifiers, and confirm each uses a role / project channel rather than a maintainer's personal email — **known open item:** this repo's git history carries a personal Gmail as commit-author, which the privacy stage must resolve (role alias or history rewrite) before going public. No public release until `/ship` returns GO.
+**Exit gate.** v2 closes by passing the **`/ship`** release-readiness filter end-to-end (functional · quality · security · docs · governance · **legal** · **privacy** · release). The `/legal` stage is blocking: ship an **AS-IS, no-warranty, no-liability** disclaimer and confirm every dependency **and bundled AI model weight** (Real-ESRGAN, GFPGAN, video2x, …) is license-compatible for redistribution, with a complete `THIRD_PARTY_NOTICES`. The `/privacy` stage is likewise blocking: sweep every published surface (contacts in `SECURITY.md` / `CODE_OF_CONDUCT.md` / README, package `author` / `maintainer` fields, commit-author identity, example / fixture data) for personal identifiers, and confirm each uses a role / project channel rather than a maintainer's personal email — **resolved 2026-07-04:** the personal Gmail once carried as commit-author has been rewritten to the GitHub-native no-reply alias (`4623144+awsaavedra@users.noreply.github.com`); re-verified this session that no personal Gmail appears in any author/committer field, commit message, history blob, or tracked file across all refs (`git log --all`, per-blob `cat-file` scan). No public release until `/ship` returns GO.
 
 ## v3.0 — Rust rewrite (primary goal: speed)
 

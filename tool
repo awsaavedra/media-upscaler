@@ -30,9 +30,9 @@ case $CMD in
       "")
         printf 'Usage: tool upscale <image|video|audio> [flags] INPUT OUTPUT\n' >&2
         printf '\n' >&2
-        printf '  tool upscale image  [-q low|medium|high|xhigh] [-s SCALE] [-m MODEL]\n' >&2
+        printf '  tool upscale image  [-q low|medium|high|xhigh|auto] [-s SCALE] [-m MODEL]\n' >&2
         printf '                      [-f FORMAT] [-t TILE] [-F] [-j] [-n] INPUT OUTPUT\n' >&2
-        printf '  tool upscale video  [-q fast|low|medium|high|xhigh] [-s SCALE] [-e ENGINE]\n' >&2
+        printf '  tool upscale video  [-q fast|low|medium|high|xhigh|auto] [-s SCALE] [-e ENGINE]\n' >&2
         printf '                      [-D] [-I 2x] [-T conservative|balanced|performance]\n' >&2
         printf '                      [-C SECS] [-r] [-c] [-j] [-n] INPUT OUTPUT\n' >&2
         printf '  tool upscale audio  [-q low|medium|high] [-j] [-n] INPUT OUTPUT\n' >&2

@@ -18,7 +18,7 @@ A personal email in a public README is not a *secret* (nothing to rotate) and no
 
 ## Iron law — never auto-fill personal identity
 The failure this skill exists to stop. Never write a **person's personal identifier** into a published or committed artifact *by default*. The most **available** value is the most **wrong**:
-- `git config user.email` / `user.name` — personal by default (this repo's own history carries a personal Gmail + a home hostname).
+- `git config user.email` / `user.name` — personal by default (a dev's config commonly resolves to a personal Gmail and a home hostname).
 - Harness / session context (the user's email, name) — background context, **not** a publish authorization.
 - `$USER` · `whoami` · env · hostname — leaks a person and often a network / device.
 

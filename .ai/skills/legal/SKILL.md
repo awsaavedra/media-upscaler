@@ -1,7 +1,7 @@
 ---
 name: legal
-description: Open-source protective boilerplate — warranty disclaimers, limitation of liability, "AS IS" language, NOTICE / attribution, trademark & endorsement reservation, export / high-risk / dual-use disclaimers. Drafts standard clauses; never bespoke legal advice. Triggers: /legal · "as is" · "no warranty" · "disclaimer" · "not responsible for your use" · "use at your own risk" · "limitation of liability" · "NOTICE file" · "trademark". Pairs with `governance` (which picks the license).
-when_to_use: Adding the protective language around a public release — disclaimers, liability caps, attribution, reservations. Distinct from `governance` (license *selection* + community-health files) and `software-engineering` §Documentation (README accuracy). Owns the `ship` gate's legal stage. NOT legal advice — see the hard boundary below.
+description: Open-source protective boilerplate + inbound-license compliance — warranty disclaimers, limitation of liability, "AS IS" language, NOTICE / attribution, **dependency & AI-model-weight license compliance (permits use + redistribution)**, trademark & endorsement reservation, export / high-risk / dual-use disclaimers. Drafts standard clauses; never bespoke legal advice. Triggers: /legal · "as is" · "no warranty" · "disclaimer" · "not responsible for your use" · "use at your own risk" · "limitation of liability" · "NOTICE file" · "trademark" · "can I bundle this model" · "what license do the weights use". Pairs with `governance` (which picks the license).
+when_to_use: Adding the protective language around a public release, and confirming every third-party dependency **and bundled / auto-downloaded AI model weight** permits the intended use + redistribution — disclaimers, liability caps, attribution, reservations. Distinct from `governance` (license *selection* + community-health files) and `software-engineering` §Documentation (README accuracy). Owns the `ship` gate's legal stage. NOT legal advice — see the hard boundary below.
 ---
 
 # Legal
@@ -45,6 +45,18 @@ See [LICENSE](LICENSE) for the full terms.
 - Source headers: `SPDX-License-Identifier: MIT` + `Copyright (c) <year> <holder>` (machine-readable; see `governance`).
 - Generate, don't hand-maintain, the dependency list (`pip-licenses`, `cargo about`, `license-checker`, `go-licenses`).
 
+## Third-party license obligations (inbound)
+Attribution (above) is necessary but not sufficient — every dependency's license must actually **permit this project's use and redistribution**, and its conditions must be satisfied. Copyleft is viral (see `governance` §License selection for compatibility).
+- **Inventory** — enumerate direct + transitive deps with each license (SPDX id). Flag GPL / AGPL / "source-available" / "non-commercial" / "research-only" terms — they constrain bundling and commercial use.
+- **Permission, not just notice** — confirm each license allows *this* distribution model; a preserved `NOTICE` does not cure an incompatible obligation (e.g. GPL code inside a permissively-licensed distribution).
+- **No relicensing** — never strip, edit, or relabel an upstream license.
+
+## AI model weights — licensed separately from code
+Model weights are **not** covered by the wrapping code's license; they carry their own terms, often stricter than the inference code — treat each checkpoint as its own dependency.
+- Record every bundled / auto-downloaded weight's source, version, and license; confirm it permits the intended (esp. commercial) use **and redistribution**.
+- Watch for research-only, acceptable-use, or output-ownership clauses before bundling weights or shipping their outputs commercially.
+- If weights download at setup rather than being committed, state their license + origin in the docs so users inherit the obligation knowingly.
+
 ## Trademark & endorsement reservation
 A code license is **not** a trademark or publicity grant — state it so forks can't imply you back them:
 > "<Name>" and its logo are marks of <holder>; the <license> covers the code, not the marks. This project does not endorse, and is not endorsed by, derivative works.
@@ -55,3 +67,14 @@ A code license is **not** a trademark or publicity grant — state it so forks c
 - **High-risk use** — disclaim fitness for safety-critical contexts (medical / aviation / nuclear / weapons): "not designed or intended for use in hazardous or life-critical systems."
 - **Export control** — for crypto / security tools: "may be subject to export laws (e.g. U.S. EAR); compliance is the user's responsibility."
 - **Contributor representation** — `CONTRIBUTING` line: contributors warrant they have the right to submit and license their contribution (DCO `Signed-off-by` captures this — see `governance`).
+
+## Output
+```
+## Legal review: <project>
+Disclaimer        PASS | FAIL — AS-IS / no-liability notice present & not weakened
+Dependency terms  PASS | FAIL — every inbound license permits use + redistribution
+Model weights     PASS | FAIL — each checkpoint's license recorded & compatible
+Attribution       PASS | FAIL — NOTICE / THIRD_PARTY_NOTICES complete
+Trademark/content PASS | FAIL — no implied endorsement; user owns outputs
+VERDICT: CLEAR | BLOCKED (<obligation unmet>) — counsel review: <items, if any>
+```
