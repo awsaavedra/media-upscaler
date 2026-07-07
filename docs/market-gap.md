@@ -1,5 +1,7 @@
 # Competitive Advantages & Properties to Perfect: Local CLI Upscaling Pipeline
 
+> Research archive (2026-06-09) — pre-v1 competitive analysis that seeded `docs/roadmap.md`. Not maintained.
+
 ## Executive Summary
 
 Several open-source projects tackle local media upscaling, but none of them fully nail the combination of speed, operational robustness, hardware-aware automation, and genuine multimodal coverage (image + video + audio) under a single ergonomic CLI. The clearest competitive advantages available to your project are: resumable, crash-proof pipelines; hardware-aware auto-tuning for mid-range GPUs; correct audio handling throughout the video pipeline; and being the first open-source tool to treat audio super-resolution as a first-class citizen alongside image and video. The sections below examine the landscape, identify each gap, and define what "perfecting" each property looks like in practice.

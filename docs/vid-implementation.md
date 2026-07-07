@@ -1,5 +1,7 @@
 # Video Upscaling — Implementation Plan
 
+> Dev spec — implemented and shipped. Kept as the implementation record; not a user guide.
+
 ## Tool: Video2X
 
 ### Why Video2X

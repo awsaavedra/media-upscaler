@@ -1,5 +1,7 @@
 # Image Upscaling — Implementation Plan
 
+> Dev spec — implemented and shipped. Kept as the implementation record; not a user guide.
+
 ## Tool: Real-ESRGAN (Python, repo install)
 
 ### Why Real-ESRGAN Python over the alternatives
