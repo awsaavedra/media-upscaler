@@ -77,17 +77,17 @@ class MediaItem:
             return "○ excluded"
         match self.status:
             case "done":
-                return f"✓ done     {self.done_mtime}"
+                ts = self.done_mtime[-5:] if len(self.done_mtime) >= 5 else self.done_mtime
+                return f"✓ done  {ts}"
             case "active":
-                pct = f"▶ active   {self.pct}%"
+                pct = f"▶ active  {self.pct}%"
                 eta = f"  {self.eta_str} left" if self.eta_str else ""
                 thr = f"  · {self.throughput_str}" if self.throughput_str else ""
                 return pct + eta + thr
             case "queued":
-                m = max(1, round(self.est_seconds / 60))
-                return f"· queued   est. ~{m} m"
+                return f"· queued  {_fmt_dur(self.est_seconds)}"
             case "failed":
-                return f"✗ failed   {self.error_msg}"
+                return f"✗ failed  {self.error_msg}"
             case _:
                 return self.status
 
@@ -525,9 +525,9 @@ class ChecklistRow(Widget):
     def render(self) -> str:
         pad = "   " * self._indent  # align files beneath their 📁 folder
         name = self.item.path.name
-        if len(name) > 30:
-            name = name[:28] + "…"
-        return f"{pad}{self.item.checkbox} {name:<30}  {self.item.status_label}"
+        if len(name) > 18:
+            name = name[:16] + "…"
+        return f"{pad}{self.item.checkbox} {name:<18}  {self.item.status_label}"
 
     def sync_classes(self) -> None:
         self.remove_class("done", "active", "failed")
