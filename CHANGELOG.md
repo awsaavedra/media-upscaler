@@ -5,6 +5,17 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Docs restructure — README is the root navigation hub**: `readme.md` → `README.md`, rebuilt to the `.ai/readme-template.md` section order with a compact TUI wireframe in Quickstart; Architecture section now indexes every `docs/` file
+- `docs/tui-wireframe.md` → "TUI & preset reference": keyboard-shortcut table synced with real bindings (added missing `P`/`o`), absorbed the `-q` preset table from the README, fixed stale `media-restore` naming
+- README TODO items moved to `docs/roadmap.md` §v2.x deferred items
+- `docs/test-plan.md` absorbed the vetted test-asset source list; status banners added to research and implementation docs; citation-tag noise stripped from `docs/local-upscaling-audio.md`
+
+### Removed
+- `docs/test-assets-vid-img-aud.md` (merged into `docs/test-plan.md` §Test asset sources)
+
 ## [2.1.0] — 2026-07-06
 
 ### Added

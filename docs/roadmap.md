@@ -290,12 +290,12 @@ progress · ☑ done.
 
 **Stage 4 — docs (`/software-engineering §Documentation`).** PASS with nits.
 
-6. **☐ Empty heading `readme.md:48`** — `### Direct CLI (back-end scripts, power users)` has
-   no body; the actual direct-CLI examples live under `## Commands` (~line 53+, labelled
-   "(direct)"). Either move those examples under this heading or delete the empty heading.
-7. **☐ Title mismatch `readme.md:1`** — `# media-restoration` vs repo/remote `media-upscaler`. Align.
-8. **☐ `tool` help omits `-q auto`** (`tool:33,35`) for image & video, though the scripts and
-   README document the tier. Add `auto` to the dispatcher usage strings.
+6. **☑ Empty heading `readme.md:48`** — `### Direct CLI (back-end scripts, power users)` had
+   no body; the actual direct-CLI examples live under `## Commands`, labelled
+   "(direct)". Fixed in `9dbe548` (empty heading removed).
+7. **☑ Title mismatch `readme.md:1`** — `# media-restoration` vs repo/remote `media-upscaler`. Fixed in `9dbe548`.
+8. **☑ `tool` help omits `-q auto`** (`tool:33,35`) for image & video, though the scripts and
+   README document the tier. Fixed in `9dbe548` (`auto` added to dispatcher usage strings).
 
 **Stage 6 — legal (`/legal`), post privacy-skill port (2026-07-01).** Ship gate restructured:
 ported the `privacy` skill from `configs/.ai`, kept **Legal standalone** (stage 6) and inserted
