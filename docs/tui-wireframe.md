@@ -1,4 +1,4 @@
-# TUI Wireframe — media-restore v2
+# TUI & preset reference — media-upscaler
 
 Built with [Textual](https://github.com/Textualize/textual). Single entry point: `tool tui`.
 
@@ -39,7 +39,7 @@ Each item's estimate comes from `perf-estimate.py` hardware profile (instant, ±
 Two-column split. Left: scrollable file checklist (all media types, sectioned). Right: stacked panels for the active job, GPU stats, and log. Two persistent rows at the bottom: status/ETA bar and key bindings bar.
 
 ```
-╔═ media-restore v2 ═══════════════════════════════════════════════════════════════════════════════════════════╗
+╔═ media-upscaler ═════════════════════════════════════════════════════════════════════════════════════════════╗
 ║  Preset [medium ▼]   Input [input/ ▶]                                                                        ║
 ╠══ Files ══════════════════════════════════════════════════════╦══ Active Job ══════════════════════════════╣
 ║  ── Images  9 done · 1 active · 2 queued · 1 failed           ║  great-wave.jpg                           ║
@@ -67,7 +67,7 @@ Two-column split. Left: scrollable file checklist (all media types, sectioned). 
 ║  Elapsed  6 m  ·  Total ETA  ≈ 26 m remaining   (1 active · 4 queued · 1 failed · 2 excluded)            ║
 ╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║  [↑↓] navigate   [SPACE] toggle   [a] all   [n] none   [t] invert   [r] retry failed   [f] force redo     ║
-║  [s] start   [p] pause/resume   [c] cancel job   [d] change dir   [q] quit                                ║
+║  [s] start   [p] pause/resume   [c] cancel job   [P] preset   [o] options   [d] change dir   [q] quit     ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -78,7 +78,7 @@ Two-column split. Left: scrollable file checklist (all media types, sectioned). 
 Full two-column layout from the moment the TUI opens — no layout shift when a job starts. The right panels (Active Job, GPU, Log) are visible immediately in idle state. Same two-row persistent footer: status/ETA on top, key bindings below.
 
 ```
-╔═ media-restore v2 ═══════════════════════════════════════════════════════════════════════════════════════════╗
+╔═ media-upscaler ═════════════════════════════════════════════════════════════════════════════════════════════╗
 ║  Preset [medium ▼]   Input [input/ ▶]                                                                        ║
 ╠══ Files ══════════════════════════════════════════════════════╦══ Active Job ══════════════════════════════╣
 ║  ── Images  3 done · 4 queued                                 ║  No active job                            ║
@@ -103,7 +103,7 @@ Full two-column layout from the moment the TUI opens — no layout shift when a 
 ║  Total ETA  ≈ 31 m   (4 img × ~2 m  +  1 vid × ~22 m  +  2 aud × ~1 m)                                   ║
 ╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 ║  [↑↓] navigate   [SPACE] toggle   [a] all   [n] none   [t] invert   [r] retry failed   [f] force redo      ║
-║  [s] start   [p] pause/resume   [c] cancel job   [d] change dir   [q] quit                                  ║
+║  [s] start   [p] pause/resume   [c] cancel job   [P] preset   [o] options   [d] change dir   [q] quit       ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -219,10 +219,27 @@ All shortcuts are **permanently displayed** in the two-row key bindings bar at t
 | `s` | Start batch | row 2 |
 | `p` | Pause / resume active job | row 2 |
 | `c` | Cancel active job | row 2 |
+| `P` | Cycle quality preset (low → medium → high → xhigh) | row 2 |
+| `o` | Options — set scale, model, format, tile, face, engine overrides | row 2 |
 | `d` | Change input directory | row 2 |
 | `q` | Quit (prompts if jobs are active) | row 2 |
 
 Row 1 = selection/navigation controls. Row 2 = job control + app commands. The split keeps related actions grouped visually.
+
+---
+
+## Video quality presets (`-q`)
+
+| Preset | Engine | Scale | GPU | Speed | Quality |
+|---|---|---|---|---|---|
+| `fast` | realesr-animevideov3 | 2× | yes | ≥9 fps @320×180 | SRVGGNet compact; fastest AI path |
+| `low` | ffmpeg lanczos | 2× | no | ~seconds | smooth interpolation, no AI detail |
+| `medium` *(default)* | RealCUGAN | 2× | yes | ~2 min/10 s (320×180) | AI-enhanced, good balance |
+| `high` | Real-ESRGAN | 4× | yes | ~2 h/30 s | best quality, highest VRAM use |
+| `xhigh` | Real-ESRGAN + NVENC | 4× | yes | ~2 h/30 s | max quality; h264_nvenc re-encode |
+| `auto` | — (slides by VRAM) | — | adaptive | — | resolves to one of the above at runtime |
+
+Use `-s` and `-e` to override scale or engine individually (e.g. `-q low -s 4` for ffmpeg at 4×). In the TUI, set the preset via the header `Preset` selector or `[P]`; overrides via `[o]`.
 
 ---
 

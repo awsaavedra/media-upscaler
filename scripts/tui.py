@@ -1514,7 +1514,7 @@ class MediaRestoreApp(App):
     def action_cycle_preset(self) -> None:
         # NOTE: a PresetModal picker was attempted but hit a Textual 8.2.7 render
         # quirk ('str' object has no attribute 'render_strips') on a later render.
-        # Reverted to cycle until that's resolved — see readme.md TODO.
+        # Reverted to cycle until that's resolved — see docs/roadmap.md §v2.x deferred items.
         if self._active_item is not None:
             self._log("[yellow]Cannot change preset while a job is active[/yellow]")
             return
