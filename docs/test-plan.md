@@ -584,3 +584,70 @@ curl -s "https://commons.wikimedia.org/w/api.php?action=query&titles=File:190604
 | Mid-century color video | prelinger-france-1947 | Committed ✓ |
 | Mixed text + halftone photo | — | Fetch on demand (see above) |
 | Geometric / technical drawing | — | Fetch on demand (see above) |
+
+---
+
+## Test asset sources — vetted safe origins
+
+Merged from `docs/test-assets-vid-img-aud.md` (2026-07-07). Only sources hosted by recognizable publishers over **HTTPS** with documented reuse terms or public-domain status (Blender, NASA, Unsplash, Pexels, LibriVox).
+
+### Images
+
+**Unsplash** — license allows free download, copy, modification, distribution, and use, including commercial.
+
+- Happy family photos: https://unsplash.com/s/photos/happy-family
+- Family park photos: https://unsplash.com/s/photos/family-park
+- Family in park photos: https://unsplash.com/s/photos/family-in-park
+- Park photos: https://unsplash.com/s/photos/park
+- Urban park photos: https://unsplash.com/s/photos/urban-park
+
+**NASA** — content generally not subject to copyright in the US; some third-party material on NASA sites is separately marked as copyrighted, so use only clearly NASA-created items.
+
+- NASA Image and Video Library: https://images.nasa.gov
+- NASA images hub: https://www.nasa.gov/images/
+- NASA Earth image article: https://www.nasa.gov/image-article/hello-world/
+
+### Video
+
+**Big Buck Bunny** — official Blender open movie, Creative Commons Attribution; Blender hosts downloads over HTTPS.
+
+- Project page: https://peach.blender.org
+- Download page: https://peach.blender.org/download/
+- Official watch page: https://video.blender.org/w/dmhvQNzwBnrWy1iYzVv5g7
+
+**Tears of Steel** — official Blender open movie, Creative Commons Attribution.
+
+- Download page: https://mango.blender.org/download/
+- Official watch page: https://video.blender.org/w/hs1zJY8mdr3iH2JNmxpeGV
+
+**Pexels** — photos and videos free for personal and commercial use under the Pexels license.
+
+- Pexels videos homepage: https://www.pexels.com/videos/
+
+### Audio
+
+**LibriVox** — all recordings are public domain in the United States and may be used freely.
+
+- LibriVox homepage: https://librivox.org/
+- LibriVox short story collections: https://librivox.org/group/465
+- Five Beloved Stories by O. Henry: https://librivox.org/five-beloved-stories-by-o-henry-by-o-henry/
+
+### Removed for security or provenance caution
+
+- Direct archive or mirror links that are not needed when an official HTTPS publisher page exists.
+- Generic Internet Archive music items unless clearly necessary and clearly licensed.
+- AudioCheck and similar sites — keep only the cleanest combination of licensing clarity and trusted-host simplicity.
+
+### Recommended starter set
+
+- One family portrait from Unsplash.
+- One park or foliage image from Unsplash.
+- One clearly NASA-created image from the NASA Image and Video Library.
+- Big Buck Bunny for animation video.
+- Tears of Steel for live-action/VFX video.
+- One LibriVox short story chapter for speech audio.
+- One short Pexels family-friendly clip if a non-Blender real-world video sample is needed.
+
+### Download safety notes
+
+Even when a source is reputable and uses HTTPS, download only from the official page, avoid browser extensions or third-party downloaders, and scan files locally after download if desired. HTTPS and publisher reputation reduce risk; they do not make every downstream local action risk-free.

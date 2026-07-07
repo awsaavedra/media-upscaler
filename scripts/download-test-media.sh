@@ -12,8 +12,8 @@
 #   ./scripts/download-test-media.sh          # download images + videos + create LR inputs
 #   ./scripts/download-test-media.sh --check  # verify files exist without downloading
 #
-# Audio sources (FreeSound) require a registered account and are not automated here.
-# See readme.md for the FreeSound URLs and manual download instructions.
+# Audio downloads are not automated here. See docs/test-plan.md §"Test asset
+# sources" for vetted manual sources (LibriVox et al.) and download safety notes.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

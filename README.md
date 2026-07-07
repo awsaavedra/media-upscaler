@@ -65,13 +65,12 @@ Full wireframes — running state, item states, subdirectory browsing, shortcuts
 - `scripts/` → processing back-end + TUI: setup, GPU check, image/video wrappers, test suite, `tui.py`, perf/quality calc
 - `docs/roadmap.md` → versions, exit criteria, work queues, hardware guidance
 - `docs/tui-wireframe.md` → TUI & preset reference: full layouts, shortcuts, `-q` preset table, item states
-- `docs/test-plan.md` → QA plan: benchmark assets, PSNR/SSIM bars, error paths
+- `docs/test-plan.md` → QA plan: benchmark assets, PSNR/SSIM bars, error paths, vetted test-media sources
 - `docs/img-implementation.md` → image pipeline spec (shipped; implementation record)
 - `docs/vid-implementation.md` → video pipeline spec (shipped; implementation record)
 - `docs/omarchy-port.md` → living doc: multi-platform port log, open v3 stack decision
 - `docs/market-gap.md` → research archive: competitive analysis that seeded the roadmap
 - `docs/local-upscaling-audio.md` → research archive: audio tool survey (v4 planned; not implemented)
-- `docs/test-assets-vid-img-aud.md` → vetted public test-media sources
 - `input/` → drop media here (gitignored); `output/` → results land here (gitignored)
 - `test-assets/` → committed synthetic fixtures; real media gitignored
 - `tools/` → engines, venvs, model weights installed by `setup.sh` (gitignored)
