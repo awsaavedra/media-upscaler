@@ -459,7 +459,7 @@ class EtaWhileActive(unittest.TestCase):
 
 class PresetControl(unittest.TestCase):
     def test_cycle_action_exists(self) -> None:
-        # A modal picker was attempted but reverted (readme TODO); P cycles.
+        # A modal picker was attempted but reverted (docs/roadmap.md §v2.x deferred items); P cycles.
         self.assertTrue(hasattr(tui.MediaRestoreApp, "action_cycle_preset"))
         self.assertFalse(hasattr(tui.MediaRestoreApp, "action_pick_preset"))
 
