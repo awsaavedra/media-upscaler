@@ -16,6 +16,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Stale/false doc claims found by thesis audit: README "no scripts yet" for audio (the `upscale-audio.sh` stub exists, backends just aren't installable); roadmap status table said v2 "ready to tag" (v2.0 and v2.1.0 both shipped); duplicated reference-job paragraph; v4 prep task 1 marked done with the real remaining gap (`setup.sh --audio`) called out. Thesis-check record added to `docs/roadmap.md` §Current status
 - Changelog link refs: added missing `[2.1.0]` compare link; `[Unreleased]` now compares from `v2.1.0`
+- **Git history scrubbed** (2026-07-07): 38 legacy binary test-media files (~17 MB) that predated the "zero committed binaries" policy removed from all history; tags rewritten in place; `.git` 18 MB → <1 MB. Commit SHAs changed; doc references remapped (`9dbe548`→`9df0581`, `9973d08`→`dfdd105`)
 
 ### Removed
 - `docs/test-assets-vid-img-aud.md` (merged into `docs/test-plan.md` §Test asset sources)

@@ -305,10 +305,10 @@ progress · ☑ done.
 
 6. **☑ Empty heading `readme.md:48`** — `### Direct CLI (back-end scripts, power users)` had
    no body; the actual direct-CLI examples live under `## Commands`, labelled
-   "(direct)". Fixed in `9dbe548` (empty heading removed).
-7. **☑ Title mismatch `readme.md:1`** — `# media-restoration` vs repo/remote `media-upscaler`. Fixed in `9dbe548`.
+   "(direct)". Fixed in `9df0581` (empty heading removed).
+7. **☑ Title mismatch `readme.md:1`** — `# media-restoration` vs repo/remote `media-upscaler`. Fixed in `9df0581`.
 8. **☑ `tool` help omits `-q auto`** (`tool:33,35`) for image & video, though the scripts and
-   README document the tier. Fixed in `9dbe548` (`auto` added to dispatcher usage strings).
+   README document the tier. Fixed in `9df0581` (`auto` added to dispatcher usage strings).
 
 **Stage 6 — legal (`/legal`), post privacy-skill port (2026-07-01).** Ship gate restructured:
 ported the `privacy` skill from `configs/.ai`, kept **Legal standalone** (stage 6) and inserted
@@ -322,7 +322,7 @@ self-reference was corrected to "Owns the ship gate's legal stage."
    this project's shipped `THIRD_PARTY_NOTICES` still rely on it (GPL video2x, Real-ESRGAN,
    GFPGAN, … mixed licenses), so stage 6 had been promising a check the skill no longer described.
    The gate is load-bearing here. **Resolution:** recovered the dropped depth from the pre-overwrite
-   version (commit `9973d08`) and merged it back into `legal` — added `## Third-party license
+   version (commit `dfdd105`) and merged it back into `legal` — added `## Third-party license
    obligations (inbound)` + `## AI model weights — licensed separately from code` sections, restored
    the `Dependency terms` / `Model weights` rows in the Output block, and re-added the model-weight /
    dep-license scope to the frontmatter description + when_to_use. Integrated into the current
