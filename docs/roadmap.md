@@ -1,6 +1,6 @@
 # Roadmap — version tags
 
-Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usability, 2. efficient image/video processing; TUI/feedback/setup fold into usability.
+Derived from the market-gap analysis (2026-06-09; [research.md](research.md)). Focus order: 1. usability, 2. efficient image/video processing; TUI/feedback/setup fold into usability.
 
 ## Current status (2026-07-07)
 
@@ -16,7 +16,7 @@ Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usabil
 
 ### Thesis check (2026-07-07)
 
-The five advantages claimed in [market-gap.md](market-gap.md), audited against shipped code:
+The five advantages claimed in the market-gap analysis ([research.md](research.md)), audited against shipped code:
 
 | Claim | Status | Evidence |
 |---|---|---|

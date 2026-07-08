@@ -21,6 +21,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 - `docs/test-assets-vid-img-aud.md` (merged into `docs/test-plan.md` §Test asset sources)
 - `docs/omarchy-port.md` — the Omarchy port works, so the port log is history (kept in git); the still-open v3 image-stack decision (engine / Python management / video2x-on-Mac) moved to `docs/roadmap.md` §v3.0
+- `docs/img-implementation.md` + `docs/vid-implementation.md` → merged verbatim into `docs/implementation.md` (one implementation record, headings demoted one level)
+- `docs/market-gap.md` + `docs/local-upscaling-audio.md` → merged verbatim into `docs/research.md` (one research archive)
 
 ## [2.1.0] — 2026-07-06
 

@@ -81,10 +81,8 @@ media-upscaler/
 │   ├── roadmap.md                # Versions, exit criteria, work queues, hw
 │   ├── tui-wireframe.md          # TUI & preset reference: layouts, keys, -q
 │   ├── test-plan.md              # QA plan: assets, quality bars, media sources
-│   ├── img-implementation.md     # Image pipeline spec — implementation record
-│   ├── vid-implementation.md     # Video pipeline spec — implementation record
-│   ├── market-gap.md             # Competitive analysis (research archive)
-│   └── local-upscaling-audio.md  # Audio tool survey (research archive; v4)
+│   ├── implementation.md         # Image + video pipeline records (shipped)
+│   └── research.md               # Archive: market-gap analysis, audio survey
 ├── input/                        # Drop media here (gitignored)
 ├── output/                       # Results land here (gitignored)
 ├── test-assets/                  # Synthetic fixtures; real media gitignored
@@ -104,7 +102,7 @@ media-upscaler/
 - Ask before changing wrapper exit-code contracts or default flag values
 
 ## Workflow
-- New tool or model: add a section to the relevant `docs/*-implementation.md` first; get approval before coding
+- New tool or model: add a section to `docs/implementation.md` first; get approval before coding
 - Commits: `#type, what; what` — type is add/fix/doc/refactor/stabilize/edit
 - Test gate: smoke test + error path tests pass before any batch use
 - When unsure, present alternatives; user chooses
@@ -125,7 +123,7 @@ Status key: ✅ shipped · 🟡 in progress · 🔵 planned · ⏸ paused · ❌
 ## Out of scope
 - Cloud upscaling services
 - GUI tools (Upscayl, Chainner)
-- Audio upscaling until v4 — `upscale-audio.sh` stub exists but its backends aren't installed by setup and the TUI section is inactive (`docs/local-upscaling-audio.md` is reference only)
+- Audio upscaling until v4 — `upscale-audio.sh` stub exists but its backends aren't installed by setup and the TUI section is inactive (audio survey in `docs/research.md` is reference only)
 - Anime-only workflows (Anime4K available via `-e anime4k` but not the primary path)
 
 ## License

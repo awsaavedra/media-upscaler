@@ -1,16 +1,22 @@
-# Competitive Advantages & Properties to Perfect: Local CLI Upscaling Pipeline
+# Research archive
 
-> Research archive (2026-06-09) — pre-v1 competitive analysis that seeded `docs/roadmap.md`. Not maintained.
+Pre-implementation research, kept for the record. Not maintained.
 
-## Executive Summary
+---
+
+## Competitive Advantages & Properties to Perfect: Local CLI Upscaling Pipeline
+
+> (2026-06-09) Pre-v1 competitive analysis that seeded `docs/roadmap.md`.
+
+### Executive Summary
 
 Several open-source projects tackle local media upscaling, but none of them fully nail the combination of speed, operational robustness, hardware-aware automation, and genuine multimodal coverage (image + video + audio) under a single ergonomic CLI. The clearest competitive advantages available to your project are: resumable, crash-proof pipelines; hardware-aware auto-tuning for mid-range GPUs; correct audio handling throughout the video pipeline; and being the first open-source tool to treat audio super-resolution as a first-class citizen alongside image and video. The sections below examine the landscape, identify each gap, and define what "perfecting" each property looks like in practice.
 
 ***
 
-## The Competitive Landscape
+### The Competitive Landscape
 
-### Who Exists
+#### Who Exists
 
 The primary open-source comparators are:
 
@@ -23,39 +29,39 @@ The primary open-source comparators are:
 | **AudioSR / Versatile ASR** [^7] | Audio | ✅ (research CLI) | ✅ | ❌ | ✅ | Research-grade only, no integration with video |
 | **Topaz Video AI** [^8] | Video | ❌ | ❌ (Mac/Win only) | Partial | ❌ | Subscription-based ($29/mo as of late 2025), closed source |
 
-### What the Paid Tier Does That OSS Doesn't
+#### What the Paid Tier Does That OSS Doesn't
 
 Topaz Video AI went fully subscription-only in September 2025 at $29/month, and is restricted to limited commercial use under its EULA for businesses under $1M annual revenue. Cloud-based competitors like TensorPix offload to remote servers — meaning no local privacy, upload wait times, and ongoing cost. This creates a structural opening: a fast, capable, **free, local, privacy-preserving** tool is something users are actively looking for.[^9][^10][^11]
 
 ***
 
-## Competitive Advantages You Can Own
+### Competitive Advantages You Can Own
 
-### 1. The Only True Three-Modality Open-Source CLI
+#### 1. The Only True Three-Modality Open-Source CLI
 
 No existing open-source project combines image, video, and audio upscaling in a single local CLI pipeline. Video2X and REAL Video Enhancer handle video but drop audio SR entirely. AudioSR is a research repo, not a production tool. Holloway's Upscaler explicitly covers only image and video. By adding even basic audio super-resolution as a "nice to have," you occupy a position no competitor holds. The research foundation is ready: AudioSR can upsample any input within 2–16 kHz bandwidth to 24 kHz / 48 kHz output, and the NeurIPS 2025 Latent Bridge Models work achieves state-of-the-art quality up to 192 kHz for speech, audio, and music.[^3][^1][^12][^13][^7][^4]
 
-### 2. Hardware-Aware Auto-Tuning for Prosumer GPUs
+#### 2. Hardware-Aware Auto-Tuning for Prosumer GPUs
 
 Most tools either require manual tile size configuration or fail silently when VRAM is exceeded. Real-ESRGAN's recommended tile sizes are: 200 for 4 GB VRAM, 300 for 6 GB, 400 for 8 GB, 600 for 12 GB — with no tiling at 24 GB. The RTX 3050 through 3060 Ti range sits at 6–8 GB, meaning tile sizes of 300–400 are correct defaults. Existing tools don't auto-detect and apply these, leading to OOM crashes and silent config drift. An automatic VRAM probe on startup that sets tile size, precision (FP16 vs. FP32), and batch size — before the first frame is processed — is a meaningful UX advantage that users will immediately notice.[^14][^15][^16][^17]
 
-### 3. Resumable, Crash-Proof Job Execution
+#### 3. Resumable, Crash-Proof Job Execution
 
 Long video jobs are routinely destroyed by crashes, power interruptions, or preemption, with no recovery possible. This is a documented, recurring complaint across upscaling pipelines: if a job crashes after hours of processing, all progress is lost. Holloway's Upscaler acknowledges this through its workspace-based directory approach, but it does not provide deterministic resume across pipeline stages. Video2X has no resume capability whatsoever, which is an open issue in the community. A per-stage checkpoint system — demux → frame extraction → SR inference → interpolation → mux → cleanup — that writes progress state to a sidecar JSON file enables any interrupted job to restart at the last successful stage. This is arguably the single most impactful operational feature for video jobs longer than 10 minutes.[^18][^1][^2]
 
-### 4. Correct Audio-Video Sync Handling
+#### 4. Correct Audio-Video Sync Handling
 
 Audio sync corruption is a known, reproducible bug in Video2X: users report video finishing 50% through with only audio remaining, and systematic 2-frame loss between input and output. The root cause is the common pattern of extracting frames to disk, upscaling them independently, then remuxing without rigorous timestamp and sample-count validation. A correctly designed pipeline should treat audio as a separate, always-preserved stream: demux audio before frame extraction, hold it untouched through the upscaling stage, validate duration drift and sample-rate consistency after muxing, and fail loudly if sync tolerance exceeds a configurable threshold (e.g., 40 ms). This should be automatic, not optional configuration.[^4][^3]
 
-### 5. Privacy and Cost as a Feature, Not an Afterthought
+#### 5. Privacy and Cost as a Feature, Not an Afterthought
 
 Cloud upscaling tools require uploading media to third-party servers — a non-starter for professional footage, private content, or corporate video assets. Your tool's fully on-device execution is a genuine differentiator, and it should be foregrounded in documentation and README positioning. The licensing freedom of open source (vs. Topaz's restricted commercial EULA) is also a concrete advantage for small studios and freelancers.[^10][^9]
 
 ***
 
-## Properties to Perfect
+### Properties to Perfect
 
-### Speed & Throughput
+#### Speed & Throughput
 
 **The core loop** is inference per frame, and the levers are: tile size, FP16 precision, batch size, and model choice. At ~2 seconds per frame on an RTX 3060 Laptop GPU with 4× Real-ESRGAN, a 30-second clip at 30 fps takes approximately 30 minutes. The practical optimizations you should implement:[^19]
 
@@ -66,7 +72,7 @@ Cloud upscaling tools require uploading media to third-party servers — a non-s
 
 A dry-run mode that estimates runtime, VRAM usage, and temporary disk requirements before execution prevents the most common user frustrations.[^1][^15]
 
-### UX & Ergonomics
+#### UX & Ergonomics
 
 The CLI interface should follow a **consistent command grammar** across all three modalities, so learning image upscaling transfers directly to video and audio:
 
@@ -83,7 +89,7 @@ Additional UX properties to perfect:
 - **Batch and glob input** — `--input "*.mp4"` should work, with per-job manifests written so users can audit the run later
 - **Verbose and quiet modes** — `--quiet` for scripted/piped workflows; `--verbose` for debugging
 
-### Reliability & Correctness
+#### Reliability & Correctness
 
 Beyond resumability, the pipeline should enforce correctness at each stage boundary:
 
@@ -91,7 +97,7 @@ Beyond resumability, the pipeline should enforce correctness at each stage bound
 - **Duration integrity check** — after mux, verify that output duration matches input duration within a configurable tolerance (default 100 ms). Video2X users have reported systematic 2-frame loss that only becomes visible at the quality evaluation stage[^3]
 - **Checksum + manifest output** — write a `{output_name}.json` sidecar containing: input hash, output hash, model used, tile size, precision, elapsed time per stage, and any warnings. This makes results reproducible and debuggable
 
-### Audio Pipeline (Nice to Have)
+#### Audio Pipeline (Nice to Have)
 
 Audio super-resolution in a CLI context is underexplored in the open-source world. AudioSR provides command-line usage and handles all audio types (speech, music, sound effects) at any input sampling rate, upsampling to 48 kHz bandwidth. The newer NeurIPS 2025 Latent Bridge Model work extends this to 192 kHz and claims state-of-the-art quality on VCTK, ESC-50, and Song-Describer benchmarks. Wrapping these into your pipeline means:[^12][^13][^22][^7]
 
@@ -102,7 +108,7 @@ Audio super-resolution in a CLI context is underexplored in the open-source worl
 
 ***
 
-## Feature Completeness Matrix
+### Feature Completeness Matrix
 
 The table below maps desired features against the state of comparable tools to identify where building is worth investing versus where you already have a working prior art to build on.
 
@@ -127,7 +133,7 @@ The table below maps desired features against the state of comparable tools to i
 
 ***
 
-## Positioning Statement (Draft README)
+### Positioning Statement (Draft README)
 
 > **[Project Name]** is a fast, fully local CLI pipeline for upscaling images, video, and audio on Ubuntu with consumer NVIDIA GPUs (RTX 3050–3060 Ti). Unlike Video2X, it resumes interrupted jobs from the last completed stage. Unlike Upscayl, it handles video and audio. Unlike cloud tools, nothing leaves your machine. It auto-tunes tile size, precision, and batch size for your GPU's VRAM, estimates runtime before starting, and validates audio-video sync after every encode.
 
@@ -135,13 +141,13 @@ This positioning is both honest and defensible given the documented limitations 
 
 ***
 
-## Conclusion
+### Conclusion
 
 The strongest competitive advantages are operational quality (resumability, sync validation, crash safety) and hardware-aware automation — areas where existing tools are measurably weak. Image and video upscaling quality per se is a commoditized problem: Real-ESRGAN, RIFE, and Anime4K are all mature. The *experience* of running those models reliably, efficiently, and without babysitting on a mid-range Linux desktop is not solved, and that is where this project should focus its differentiation. Audio super-resolution is a genuine whitespace in the open-source CLI ecosystem and should be included even as a thin wrapper around AudioSR, since it would make this the only tool in the category with all three modalities.
 
 ---
 
-## References
+### References
 
 1. [Holloway's Upscaler - Image & Video](https://github.com/hollowaykeanho/Upscaler) - This project is a consolidation of various compiled open-source AI image/video upscaling product for...
 
@@ -187,3 +193,145 @@ The strongest competitive advantages are operational quality (resumability, sync
 
 22. [Audio Super-Resolution with Latent Bridge Models - OpenReview](https://openreview.net/forum?id=LkA1yLshF8) - Towards high-quality audio super-resolution, we present a new system with latent bridge models (LBMs...
 
+---
+
+## Local Audio Upscaling Setup Guide
+
+> Audio tool survey for planned v4. Nothing implemented yet; reference only.
+
+This is a starter guide for trying **local**, **open-source** audio upscaling or enhancement tools on your own machine. These are not as mature as image/video upscalers, but there are a few credible projects worth testing locally before paying for commercial software.
+
+### What to try first
+
+| Tool | Best use | Difficulty | Exact project |
+|---|---|---:|---|
+| AudioSR | True audio super-resolution / bandwidth extension to 48 kHz | Medium | [haoheliu/versatile_audio_super_resolution](https://github.com/haoheliu/versatile_audio_super_resolution)  |
+| OpenVINO Audacity plugin | Easier GUI workflow inside Audacity with Audio Super Resolution effect | Easy | [intel/openvino-plugins-ai-audacity](https://github.com/intel/openvino-plugins-ai-audacity)  |
+| DeepFilterNet | Noise suppression and cleanup, not true SR, but useful in a restoration chain | Medium | [Rikorose/DeepFilterNet](https://github.com/Rikorose/DeepFilterNet)  |
+
+### 1) Easy: Audacity + OpenVINO AI plugins
+
+This is the easiest local starting point because it gives a GUI workflow inside Audacity instead of requiring direct model scripting. Intel's OpenVINO Audacity plugin includes **Audio Super Resolution** and explicitly notes that the feature is a port of AudioSR.
+
+#### Exact project links
+
+- Plugin repo: [intel/openvino-plugins-ai-audacity](https://github.com/intel/openvino-plugins-ai-audacity)
+- Audacity OpenVINO page referenced by Intel: [audacityteam.org/download/openvino](https://www.audacityteam.org/download/openvino/)
+- Underlying SR project used by the plugin: [haoheliu/versatile_audio_super_resolution](https://github.com/haoheliu/versatile_audio_super_resolution)
+
+#### What it does
+
+- Adds AI effects inside Audacity.
+- Lets you run Audio Super Resolution locally on CPU, GPU, or NPU depending on the device and plugin support shown in Intel's demo.
+- Best for users who want to test audio upscaling without building a command-line pipeline.
+
+#### Setup steps
+
+1. Install Audacity 3.7.1 or newer.
+2. Download the latest OpenVINO Audacity plugin release from GitHub.
+3. During installation, point the installer at the correct Audacity install path if you have multiple versions installed.
+4. Open Audacity.
+5. Load a test audio file.
+6. Select the audio region.
+7. Go to **Effects** -> **OpenVINO Effects** -> **Super Resolution**.
+8. Start with default settings and export a short test result.
+
+#### When to use it
+
+Use this if the priority is the fastest path to trying local audio upscaling with the least setup friction.
+
+---
+
+### 2) Medium: AudioSR direct from GitHub
+
+AudioSR is the main open-source project focused on true **audio super-resolution**. The project describes itself as "Versatile audio super resolution (any -> 48kHz)" and supports music, speech, and other sound types.
+
+#### Exact project links
+
+- Main GitHub repo: [haoheliu/versatile_audio_super_resolution](https://github.com/haoheliu/versatile_audio_super_resolution)
+- Project page: [audioldm.github.io/audiosr](https://audioldm.github.io/audiosr/)
+- Optional ComfyUI wrapper: [Saganaki22/ComfyUI-AudioSR](https://github.com/Saganaki22/ComfyUI-AudioSR)
+
+#### What it does
+
+- Upscales low-bandwidth audio to high-resolution 48 kHz output.
+- Works on music, speech, sound effects, and environmental audio according to the project page.
+- Can be run from the command line or with a local Gradio demo.
+
+#### Setup steps
+
+1. Install Python 3.9 in a fresh virtual environment or Conda environment.
+2. Clone the repo:
+   ```bash
+   git clone https://github.com/haoheliu/versatile_audio_super_resolution.git
+   cd versatile_audio_super_resolution
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   The repo also documents package installation via `pip install audiosr==0.0.7` or direct Git install.
+4. For a local GUI demo, run:
+   ```bash
+   python app.py
+   ```
+   Then open the displayed local URL in your browser.
+5. For CLI inference on one file, run:
+   ```bash
+   audiosr -i path/to/input.wav
+   ```
+   The project states output is saved to `./output` by default.
+6. Test on a short clip first before processing long files.
+
+#### Optional alternate local CLI path
+
+A community fork documents a more explicit local inference flow and example parameters if the main repo flow gives trouble.
+
+- Fork: [jarredou/AudioSR-Colab-Fork](https://github.com/jarredou/AudioSR-Colab-Fork)
+
+#### When to use it
+
+Use AudioSR when the goal is actual **bandwidth extension / super-resolution**, not just noise cleanup.
+
+---
+
+### 3) Medium: DeepFilterNet as a cleanup companion
+
+DeepFilterNet is **not** true audio super-resolution, but it is a strong open-source local tool for noise suppression and can be useful before or after AudioSR in a restoration workflow.
+
+#### Exact project links
+
+- Main GitHub repo: [Rikorose/DeepFilterNet](https://github.com/Rikorose/DeepFilterNet)
+- OpenVINO model card referencing the same project: [Intel/deepfilternet-openvino](https://huggingface.co/Intel/deepfilternet-openvino)
+
+#### What it does
+
+- Suppresses background noise in noisy WAV files using deep filtering.
+- Offers a precompiled binary according to the GitHub repo, which makes it easier to test locally than some research-only tools.
+- Works well as part of a chain: clean audio first, then try super-resolution if needed.
+
+#### Setup steps
+
+1. Go to the DeepFilterNet GitHub repository releases or README.
+2. Download the precompiled binary if available for your platform, or follow the Python/Rust build instructions from the repo.
+3. Run a first cleanup pass on a noisy WAV file.
+4. Compare the cleaned file against the original before attempting AudioSR.
+5. If the file still lacks high-frequency detail, feed the cleaned file into AudioSR as the next stage.
+
+#### When to use it
+
+Use this when your real problem is noisy or muddy audio rather than missing high-frequency bandwidth.
+
+---
+
+### Suggested starting order
+
+For the fastest local starting point:
+
+1. **Try Audacity + OpenVINO plugin first** if you want a GUI and the lowest setup friction.
+2. **Try AudioSR second** if you want the most direct open-source audio super-resolution project.
+3. **Add DeepFilterNet third** if the source audio is noisy and needs cleanup before enhancement.
+
+### Practical expectations
+
+Audio upscaling is still less mature than image or video upscaling. AudioSR is the main project worth trying for true super-resolution, while the OpenVINO Audacity plugin is the easiest way to test it locally in a GUI, and DeepFilterNet is best treated as a companion restoration tool rather than a direct upscaler.
