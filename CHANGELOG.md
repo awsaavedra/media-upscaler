@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `docs/test-plan.md` §Video quality measurement plan: synthetic GT round-trip metric gate, temporal-consistency checks, preset×clip matrix, closed-source parity protocol — video previously had integrity checks but no fidelity gate
+- `docs/roadmap.md` §v2.x exit criterion: upscaling quality as good as or better than closed-source alternatives (measured; Topaz comparison promoted from research question to exit criterion); post-v2 scope pinned to speed (v3) and audio (v4); quality-gate queue items 5–6
+
 ### Changed
 - **Docs restructure — README is the root navigation hub**: `readme.md` → `README.md`, rebuilt to the `.ai/readme-template.md` section order with a compact TUI wireframe in Quickstart; Architecture section now indexes every `docs/` file
 - `docs/tui-wireframe.md` → "TUI & preset reference": keyboard-shortcut table synced with real bindings (added missing `P`/`o`), absorbed the `-q` preset table from the README, fixed stale `media-restore` naming

@@ -223,6 +223,15 @@ Legend: ✅ verified · 🟡 in progress · ⬜ untested · ❓ unknown (not yet
 Lock v2 down before the v3 Rust rewrite. Focus is correctness, robustness, and
 output-quality tuning on the existing Python pipeline — no new feature surface.
 
+**Exit criterion (2026-07-07):** upscaling quality **as good as or better than
+the closed-source alternatives** (Topaz-class) on the covered content cases —
+measured, not eyeballed. The written specs: image = the calibration table
+below; video = `docs/test-plan.md` §Video quality measurement plan; the
+comparison itself = §Open research question at the bottom of this file
+(promoted from research question to exit criterion). Everything after v2
+narrows to two concerns — **v3 = speed, v4 = audio** — so the quality bar is
+locked here and must not regress in the rewrite.
+
 - **Bug bashing.** Exercise the full TUI surface against real inputs (reset, per-section / per-subdirectory select, force-redo, retry, pause/cancel/resume, dir change, options modal); hunt and fix edge-case crashes, stale-state bugs, and progress/ETA glitches. Convert each fix into a regression test in `scripts/test_tui.py`.
 - **Stabilization.** Confirm the live progress regexes against real GPU stdout (`parse_image_progress` / `parse_video_progress`, the open item above); harden sidecar reattach and zombie-job reconciliation; complete the manual TUI test plan (`test.sh` sections 31–48) and the per-OS matrix above.
 - **Video & image optimization.** Tune throughput and output quality: tile-size / VRAM heuristics, dedup + interpolation interaction, NVENC vs libx264 quality/size tradeoffs, thermal pacing on the 3050 Mobile reference box.
@@ -252,7 +261,9 @@ Concrete, ordered follow-ups that finish the quality-gate epic. Status: ☐ not 
    - **RAM headroom:** dedup/chunk/NVENC stage large lossless temp files; under ~2 GiB free `MemAvailable`, holds the tier one AI notch lower. Resolved before validation so batch recursion re-passes a fixed tier (no per-file re-probe). Verified on this box (3564 MiB → `fast`), all five VRAM bands, and the stubbed no-GPU → `low` path.
 2. **☐ Multi-resource tier refinement.** Fold `gpu_count` into the tier where it actually binds. **Note from item 1:** RAM only binds the *video* path (temp-file staging) — for single-image inference VRAM is the sole binding constraint, so `upscale-image.sh -q auto` stays VRAM-driven by design rather than carrying a guard that never fires. `gpu_count`-aware tiering is deferred until the inference path is actually multi-GPU-aware (today it targets device 0 only), otherwise a higher tier would over-promise.
 3. **◧ Calibrate per-tier thresholds against a real GPU baseline.** **Baseline recorded 2026-06-28** (RTX 3050 Mobile, real Real-ESRGAN inference — see the table under "Per-tier absolute quality thresholds" above): butterfly 24.731 dB / 0.8714, baby 24.410 dB / 0.7347. **Outcome:** measured PSNR lands far below the literature targets purely from the GAN tradeoff, so promoting the bars to those PSNR targets would wrongly fail good output. **Remaining:** add LPIPS and re-calibrate any threshold tightening against the perceptual metric, not PSNR. Enforced bars stay conservative until then.
-4. **☐ Wire `assert_quality` for the video path.** Extend the harness with a short-clip frame-extract → `quality-metrics.py` comparison so the video gate matches the image gate (still inside the 4 GB / one-short-clip budget).
+4. **☐ Wire `assert_quality` for the video path.** Extend the harness with a short-clip frame-extract → `quality-metrics.py` comparison so the video gate matches the image gate (still inside the 4 GB / one-short-clip budget). **Spec written 2026-07-07:** `docs/test-plan.md` §Video quality measurement plan §1+§3 (GT round-trip, frame sampling, mean+min aggregate bars, crf-23/crf-32 cases).
+5. **☐ Temporal-consistency recording.** Per-frame PSNR spread, flicker proxy, chunk-boundary spot check — record first, gate after a baseline exists. Spec: test-plan §Video quality measurement plan §2.
+6. **☐ Closed-source parity benchmark.** Run the test-plan §4 protocol (same LR inputs through Topaz Video AI trial, identical metric run + blind visual pass on the three gap cases); record results in §Open research question below. **This is the v2.x exit measurement.** Blocked on a machine with the trial installed — record-and-wait, not urgent-and-forgotten.
 
 #### Ship-gate audit findings (2026-07-01) — pre-publish debt
 
@@ -340,7 +351,9 @@ self-reference was corrected to "Owns the ship gate's legal stage."
 
 ## v3.0 — Rust rewrite (primary goal: speed)
 
-Exit criteria: reference job measurably faster than v2 on identical hardware; full feature parity; all integration tests pass against the Rust binary; Python scripts retired.
+Post-v2 scope (user decision 2026-07-07): everything after v2 concerns exactly two things — **speed (v3)** and **the audio feature (v4)**. Quality is a v2.x exit criterion, not a v3 variable.
+
+Exit criteria: reference job measurably faster than v2 on identical hardware; full feature parity; all integration tests pass against the Rust binary **including the v2 quality gates unchanged** (quality must not regress); Python scripts retired.
 
 Primary motivation is throughput — Rust eliminates Python interpreter overhead, enables zero-copy buffer passing to inference engines, and opens direct CUDA/Vulkan interop without subprocess boundaries. The Python codebase is the reference implementation for behavior; v3 is a port, not a redesign — no new features until parity is confirmed.
 
@@ -411,6 +424,8 @@ AudioSR is the only OSS option for true audio super-resolution; the tier design 
 ## Open research question: model quality gap vs. Topaz
 
 **Question:** Does this project reach Topaz Video AI / Topaz Photo AI output quality by v3–v4, given equivalent hardware?
+
+**(2026-07-07) Promoted to the v2.x exit criterion** — no longer just a research question. Measurement protocol: `docs/test-plan.md` §Video quality measurement plan §4; tracked as quality-gate queue item 6 under §v2.x. Results land here when the benchmark runs.
 
 **Current assessment (2026-06-11):** Pipeline parity is achievable — TensorRT (v2) + Rust zero-copy pipeline (v3) close the throughput gap. The remaining variable is model weights, not architecture.
 

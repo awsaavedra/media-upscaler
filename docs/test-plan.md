@@ -176,7 +176,7 @@ These images are not synthetically downscaled at a clean ratio — they are genu
 
 ## Video test set
 
-No GT pairs for video — all assessments are qualitative / frame-level visual inspection. Run frame extraction (`ffmpeg -i clip.mp4 frames/%04d.png`) on output and input and compare visually.
+Real video has no GT pairs, so the per-clip assessments below are qualitative / frame-level visual inspection (`ffmpeg -i clip.mp4 frames/%04d.png` on output and input, compare visually). The **measurable** video gate — synthetic GT round-trip + per-frame metrics — is specified in §Video quality measurement plan below.
 
 ### test-clip.mp4 — smoke test
 
@@ -244,6 +244,83 @@ No GT pairs for video — all assessments are qualitative / frame-level visual i
 - Color hues not shifted (compare histogram of input vs output)
 - Text on screen (if any) legible at output resolution
 - No temporal banding on slow-pan shots
+
+---
+
+## Video quality measurement plan (v2.x)
+
+Written 2026-07-07. Context: the v2.x exit criterion is upscaling quality as
+good as or better than the closed-source alternatives (`docs/roadmap.md`
+§v2.x), but video today has **no fidelity gate at all** — `upscale-video.sh`
+checks integrity only (duration drift ≤100 ms, frame count, A/V sync ≤40 ms).
+This section is the written spec for closing that gap; implementation is
+tracked in the roadmap quality-gate queue (items 4–6).
+
+### 1. Synthetic GT round-trip (the measurable gate)
+
+Manufacture GT pairs the same way the image benchmark set does:
+
+1. **GT clip**: a pristine clip at target resolution. Start with
+   `test-clip.mp4` regenerated at 1280×720 — it is synthetic
+   (`download-test-media.sh` builds it), so a full-res variant is free.
+2. **LR input**: Lanczos downscale ÷4 + re-encode
+   (`ffmpeg -vf "scale=iw/4:ih/4:flags=lanczos" -crf 23`). A second variant
+   at `-crf 32` simulates the heavily-compressed/archival case — the known
+   closed-source-leads gap.
+3. **Upscale** the LR input back to GT resolution with the preset under test.
+4. **Frame sampling**: extract aligned frames from output and GT (every 24th
+   frame → ~10 pairs from a 10 s clip; stays inside the 4 GB /
+   one-short-clip local budget).
+5. **Metrics**: `quality-metrics.py` per frame pair; aggregate **mean** and
+   **min** (worst frame) PSNR/SSIM; LPIPS when installed.
+6. **Gate**: conservative absolute bars first (catch blank/noise/desynced
+   frames), calibrated on the reference box before any tightening — same
+   discipline as the image gate. PSNR under-rates GAN output (see the
+   roadmap calibration finding), so tighten against LPIPS, not PSNR.
+
+### 2. Temporal consistency (video-only failure mode)
+
+Per-frame metrics can all pass while the video flickers. Record these first;
+gate only once a baseline exists:
+
+- **Per-frame PSNR spread**: std-dev of PSNR across the sampled frames — a
+  spike marks a bad chunk boundary or model instability.
+- **Flicker proxy**: mean absolute frame-to-frame difference on the output
+  vs the same statistic on the GT — the output should not carry materially
+  more frame-to-frame energy than the source motion explains.
+- **Chunk-boundary spot check**: with `-C` chunking active, force sampled
+  frames to straddle a chunk boundary; a visible seam there is a
+  resume-path bug, not a model artifact.
+
+### 3. Preset × clip matrix
+
+Local gate (integration runs, 4 GB budget) — 1 clip, 2 cases:
+
+| Case | Preset | What it proves |
+|---|---|---|
+| test-clip round-trip ÷4, crf 23 | `fast` | measurable floor for the cheapest AI path |
+| test-clip round-trip ÷4, crf 32 | `medium` | compression-artifact recovery |
+
+Full sweep (manual, bigger box): sf-1906 + prelinger-1947 across
+`fast/low/medium/high/xhigh` — the qualitative criteria above plus recorded
+round-trip metrics against their own Lanczos-downscaled variants.
+
+### 4. Closed-source comparison protocol (parity benchmark)
+
+The exit criterion is comparative, so absolute metrics alone can't close it:
+
+1. Run the same LR inputs (§1 round-trip variants + one 10 s sf-1906
+   excerpt) through the closed-source reference (Topaz Video AI trial) on
+   the same machine.
+2. Score both outputs against GT with the identical §1 metric run, plus a
+   blind side-by-side visual pass on the three known gap cases: archival
+   compression, fine text, CG/synthetic edges.
+3. Record results, date, and versions in `docs/roadmap.md` §Open research
+   question. **"As good or better" means:** our mean LPIPS ≤ theirs (or
+   within noise) and no gap case where ours is clearly visually worse.
+
+Requires a machine with the trial installed; the protocol is recorded now so
+the run is mechanical when one is available.
 
 ---
 
