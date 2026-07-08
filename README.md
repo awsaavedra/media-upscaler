@@ -61,18 +61,40 @@ Full wireframes — running state, item states, subdirectory browsing, shortcuts
 - Perf estimate: `tools/realesrgan/venv/bin/python scripts/perf-estimate.py --video clip.mp4` (`--list-hw` for profiles)
 
 ## Architecture
-- `tool` → thin dispatcher; `./tool tui` is the primary entry point
-- `scripts/` → processing back-end + TUI: setup, GPU check, image/video wrappers, test suite, `tui.py`, perf/quality calc
-- `docs/roadmap.md` → versions, exit criteria, work queues, hardware guidance
-- `docs/tui-wireframe.md` → TUI & preset reference: full layouts, shortcuts, `-q` preset table, item states
-- `docs/test-plan.md` → QA plan: benchmark assets, PSNR/SSIM bars, error paths, vetted test-media sources
-- `docs/img-implementation.md` → image pipeline spec (shipped; implementation record)
-- `docs/vid-implementation.md` → video pipeline spec (shipped; implementation record)
-- `docs/market-gap.md` → research archive: competitive analysis that seeded the roadmap
-- `docs/local-upscaling-audio.md` → research archive: audio tool survey (v4 planned; not implemented)
-- `input/` → drop media here (gitignored); `output/` → results land here (gitignored)
-- `test-assets/` → committed synthetic fixtures; real media gitignored
-- `tools/` → engines, venvs, model weights installed by `setup.sh` (gitignored)
+```
+media-upscaler/
+├── tool                          # Dispatcher; ./tool tui = primary entry point
+├── scripts/                      # Processing back-end + TUI
+│   ├── setup.sh                  # One-shot self-contained install (no sudo)
+│   ├── check-gpu.sh              # GPU / driver / Vulkan readiness probe
+│   ├── upscale-image.sh          # Real-ESRGAN wrapper: batch, presets, faces
+│   ├── upscale-video.sh          # Video2X wrapper: chunked resume, integrity
+│   ├── upscale-audio.sh          # v4 stub — backends wired, not installable
+│   ├── tui.py                    # Textual TUI — the primary interface
+│   ├── perf-estimate.py          # Throughput/ETA estimator (calc layer)
+│   ├── quality-metrics.py        # PSNR/SSIM/LPIPS quality gate (calc layer)
+│   ├── test.sh                   # Fast + integration suites
+│   ├── test_tui.py               # TUI unit tests
+│   ├── download-test-media.sh    # Fetch benchmark/test assets
+│   └── teardown.sh               # Clean uninstall
+├── docs/
+│   ├── roadmap.md                # Versions, exit criteria, work queues, hw
+│   ├── tui-wireframe.md          # TUI & preset reference: layouts, keys, -q
+│   ├── test-plan.md              # QA plan: assets, quality bars, media sources
+│   ├── img-implementation.md     # Image pipeline spec — implementation record
+│   ├── vid-implementation.md     # Video pipeline spec — implementation record
+│   ├── market-gap.md             # Competitive analysis (research archive)
+│   └── local-upscaling-audio.md  # Audio tool survey (research archive; v4)
+├── input/                        # Drop media here (gitignored)
+├── output/                       # Results land here (gitignored)
+├── test-assets/                  # Synthetic fixtures; real media gitignored
+├── tools/                        # Engines, venvs, weights (gitignored)
+├── CLAUDE.md                     # Session context → .ai/rules.md
+└── .ai/
+    ├── rules.md                  # Project rules (numbered, enforced)
+    ├── readme-template.md        # README section-order template
+    └── skills/                   # Capability bundles, on-demand (14)
+```
 
 ## Rules
 - Always run a single-image smoke test before any long batch job

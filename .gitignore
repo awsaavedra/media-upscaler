@@ -1,5 +1,6 @@
 # Local tool installations — large binaries, venvs, model weights
 tools/
+gfpgan/
 
 # Input media and upscaled output — media files stay local, never committed
 input/images/*
