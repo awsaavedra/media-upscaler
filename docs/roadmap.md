@@ -2,16 +2,31 @@
 
 Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usability, 2. efficient image/video processing; TUI/feedback/setup fold into usability.
 
-## Current status (2026-06-16)
+## Current status (2026-07-07)
 
 | Version | Tag | Status | Blocking |
 |---|---|---|---|
 | **v0** | `v0` | ✅ shipped | — |
 | **v2-prep** | `v2-prep` | ✅ shipped | — |
 | **v1** | `v1.0` | ✅ shipped | — |
-| **v2** | — | 🟡 ready to tag | all features implemented; needs integration test pass |
-| **v3** | — | 🔵 planned | v2 must ship first |
+| **v2** | `v2.0` | ✅ shipped | — |
+| **v2.1** | `v2.1.0` | ✅ shipped | — |
+| **v3** | — | 🔵 planned | image-stack decision open ([omarchy-port.md](omarchy-port.md)) |
 | **v4** | — | 🔵 planned | v3 must ship first |
+
+### Thesis check (2026-07-07)
+
+The five advantages claimed in [market-gap.md](market-gap.md), audited against shipped code:
+
+| Claim | Status | Evidence |
+|---|---|---|
+| Free / private / local | ✅ held | all inference local; no cloud paths anywhere |
+| Resumable, crash-proof jobs | ✅ held | chunked `-C` + `-r` resume + sidecar JSON (v1.0) |
+| Hardware-aware VRAM tuning | ✅ held | VRAM auto-tile (v1.0) + `-q auto` tier (v2.1) |
+| A/V sync correctness | ✅ held | post-mux gate: duration drift ≤ 100 ms, frame count, A/V drift ≤ 40 ms (`upscale-video.sh`) |
+| Three-modality (image+video+audio) | 🔵 not yet | `upscale-audio.sh` backends wired but not installable; TUI audio section inactive — lands in v4 |
+
+The unified CLI grammar market-gap proposed (`tool upscale image|video|audio`) shipped verbatim in v2. Platform claim is narrower than proposed: Ubuntu + Omarchy verified; Mac/WSL2 are v3 targets (video2x AppImage doesn't cover Mac).
 
 **v2 done as of 2026-06-16:** All remaining v2 features implemented:
 - Test-asset cleanup: zero committed binaries in `test-assets/`; download script generates all fixtures
@@ -29,8 +44,6 @@ Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usabil
 **v1 done as of 2026-06-11:** `-q fast` preset (`realesr-animevideov3`), chunked processing + `-r` resume, calibration probe (`-c`), post-mux integrity check, temp-disk preflight, VRAM auto-tile for images, batch video directory mode. Exit bar (`≤ 10 h` reference job on RTX 3050 Mobile) and throttle warning TUI remain before tagging `v1.0`.
 
 **v2 done as of 2026-06-11:** Textual TUI (`tui.py`) with full CLI parity — preset cycling, options modal (all script flags), sidecar reattach, adaptive ETA, GPU stats panel, log pane. Tagged `v2-prep`; TUI options modal landed one commit after that tag. Remaining v2 items listed in the v2 section below.
-
-Reference job for all targets below: **1 hour 854×480 @ 25 fps → 1920×1080** (90,000 frames), path = AI 2× → 1708×960 → lanczos 1.125× → 1080p. Integer-scale engines can't do 2.25× directly; 4×-then-downscale is ~6× the work for discarded detail.
 
 Reference job for all targets below: **1 hour 854×480 @ 25 fps → 1920×1080** (90,000 frames), path = AI 2× → 1708×960 → lanczos 1.125× → 1080p. Integer-scale engines can't do 2.25× directly; 4×-then-downscale is ~6× the work for discarded detail.
 
@@ -361,8 +374,8 @@ AudioSR is the only OSS option for true audio super-resolution; the tier design 
 
 ### Prep tasks
 
-1. Complete `scripts/upscale-audio.sh` stub (flag parsing, sidecar JSON, exit codes) — stub landed as v2 prep; wire real backends here.
-2. Add AudioSR + DeepFilterNet install to `scripts/setup.sh` behind `--audio` opt-in flag (off by default until v4).
+1. ~~Complete `scripts/upscale-audio.sh` stub~~ — landed as v2 prep with flag parsing, sidecar JSON, exit codes, **and** backend invocations (RNNoise/DeepFilterNet/AudioSR); untestable until task 2 provides the installs.
+2. Add AudioSR + DeepFilterNet install to `scripts/setup.sh` behind `--audio` opt-in flag (off by default until v4). The script's boundary checks already point users at `setup.sh --audio` — that flag doesn't exist yet.
 3. Add audio section to Textual TUI checklist with per-item ETA (seconds-of-audio processed / elapsed second).
 4. Extend `perf-estimate.py` with audio hardware profiles.
 

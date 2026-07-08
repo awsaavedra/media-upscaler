@@ -104,7 +104,7 @@ Status key: ✅ shipped · 🟡 in progress · 🔵 planned · ⏸ paused · ❌
 ## Out of scope
 - Cloud upscaling services
 - GUI tools (Upscayl, Chainner)
-- Audio upscaling (`docs/local-upscaling-audio.md` is reference only; no scripts yet)
+- Audio upscaling until v4 — `upscale-audio.sh` stub exists but its backends aren't installed by setup and the TUI section is inactive (`docs/local-upscaling-audio.md` is reference only)
 - Anime-only workflows (Anime4K available via `-e anime4k` but not the primary path)
 
 ## License

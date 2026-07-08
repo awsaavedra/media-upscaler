@@ -13,6 +13,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - README TODO items moved to `docs/roadmap.md` §v2.x deferred items
 - `docs/test-plan.md` absorbed the vetted test-asset source list; status banners added to research and implementation docs; citation-tag noise stripped from `docs/local-upscaling-audio.md`
 
+### Fixed
+- Stale/false doc claims found by thesis audit: README "no scripts yet" for audio (the `upscale-audio.sh` stub exists, backends just aren't installable); roadmap status table said v2 "ready to tag" (v2.0 and v2.1.0 both shipped); duplicated reference-job paragraph; v4 prep task 1 marked done with the real remaining gap (`setup.sh --audio`) called out. Thesis-check record added to `docs/roadmap.md` §Current status
+- Changelog link refs: added missing `[2.1.0]` compare link; `[Unreleased]` now compares from `v2.1.0`
+
 ### Removed
 - `docs/test-assets-vid-img-aud.md` (merged into `docs/test-plan.md` §Test asset sources)
 
@@ -90,7 +94,8 @@ Full feature set + real-asset test suite.
 - Test suite (fast + integration modes)
 - Setup/teardown scripts, gitignore, project scaffolding
 
-[Unreleased]: https://github.com/awsaavedra/media-upscaler/compare/v2.0...HEAD
+[Unreleased]: https://github.com/awsaavedra/media-upscaler/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/awsaavedra/media-upscaler/compare/v2.0...v2.1.0
 [2.0.0]: https://github.com/awsaavedra/media-upscaler/compare/v1.0...v2.0
 [1.0.0]: https://github.com/awsaavedra/media-upscaler/compare/v2-prep...v1.0
 [v2-prep]: https://github.com/awsaavedra/media-upscaler/compare/v0...v2-prep
