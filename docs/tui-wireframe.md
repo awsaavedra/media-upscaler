@@ -2,6 +2,8 @@
 
 Built with [Textual](https://github.com/Textualize/textual). Single entry point: `tool tui`.
 
+> Audio rows in the tables and wireframes below show the **v4 design target**. The shipped TUI renders the Audio section greyed out ("inactive — audio upscaling not yet available"); see `docs/roadmap.md` §v4.0.
+
 ---
 
 ## Default selection rules (startup)
@@ -10,7 +12,7 @@ Built with [Textual](https://github.com/Textualize/textual). Single entry point:
 |---|---|---|
 | Images | **All unupscaled** selected (`[✓]`); already-upscaled shown `✓ done` but skipped | Images are fast; batch-all is safe |
 | Video | **One video** selected (`[✓]`); rest start unchecked (`[ ]`) | Videos are long — default prevents accidentally queueing hours of work |
-| Audio | **All unupscaled** selected (`[✓]`); already-upscaled shown `✓ done` but skipped | Same rationale as images |
+| Audio (v4) | **All unupscaled** selected (`[✓]`); already-upscaled shown `✓ done` but skipped | Same rationale as images |
 
 "Already upscaled" = matching file found in `output/` at startup (detected by output path, not a separate state file).
 
@@ -198,7 +200,7 @@ Total ETA = Σ est(item)  for all items where checkbox=[✓] and status=queued
 |---|---|---|
 | Image | `tiles/s` (single large file) or `files/s` (batch of small files) | tiles or files done / total |
 | Video | `fps` | frames done / total frames |
-| Audio | `s audio / s elapsed` | seconds of audio processed / total duration |
+| Audio (v4) | `s audio / s elapsed` | seconds of audio processed / total duration |
 
 ---
 

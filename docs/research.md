@@ -197,7 +197,7 @@ The strongest competitive advantages are operational quality (resumability, sync
 
 ## Local Audio Upscaling Setup Guide
 
-> Audio tool survey for planned v4. Nothing implemented yet; reference only.
+> Audio tool survey for planned v4. Only the `upscale-audio.sh` stub exists (backends not installable yet); reference only.
 
 This is a starter guide for trying **local**, **open-source** audio upscaling or enhancement tools on your own machine. These are not as mature as image/video upscalers, but there are a few credible projects worth testing locally before paying for commercial software.
 
