@@ -29,6 +29,9 @@ build/
 *.onnx
 *.safetensors
 
+# Git bundle backups (pre-rewrite history snapshots; may contain purged files)
+*.bundle
+
 # Editor / OS
 .DS_Store
 *.swp
