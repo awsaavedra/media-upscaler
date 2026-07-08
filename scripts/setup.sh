@@ -7,7 +7,7 @@
 # built on a project-local Python 3.12 (provisioned via mise/uv) so the proven cu118 wheels
 # install cleanly. We deliberately avoid the system Python — modern distros ship 3.13/3.14,
 # where (a) cu118 wheels don't publish and (b) basicsr's setup.py breaks on the PEP 667
-# locals() change. Same path works identically on Mac/Ubuntu/WSL2/Omarchy. See docs/omarchy-port.md.
+# locals() change. Same path works identically on Mac/Ubuntu/WSL2/Omarchy. See docs/roadmap.md §v3.0 (open image-stack decision).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

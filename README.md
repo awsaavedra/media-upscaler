@@ -68,7 +68,6 @@ Full wireframes — running state, item states, subdirectory browsing, shortcuts
 - `docs/test-plan.md` → QA plan: benchmark assets, PSNR/SSIM bars, error paths, vetted test-media sources
 - `docs/img-implementation.md` → image pipeline spec (shipped; implementation record)
 - `docs/vid-implementation.md` → video pipeline spec (shipped; implementation record)
-- `docs/omarchy-port.md` → living doc: multi-platform port log, open v3 stack decision
 - `docs/market-gap.md` → research archive: competitive analysis that seeded the roadmap
 - `docs/local-upscaling-audio.md` → research archive: audio tool survey (v4 planned; not implemented)
 - `input/` → drop media here (gitignored); `output/` → results land here (gitignored)

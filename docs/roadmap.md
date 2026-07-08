@@ -11,7 +11,7 @@ Derived from [market-gap.md](market-gap.md) (2026-06-09). Focus order: 1. usabil
 | **v1** | `v1.0` | ✅ shipped | — |
 | **v2** | `v2.0` | ✅ shipped | — |
 | **v2.1** | `v2.1.0` | ✅ shipped | — |
-| **v3** | — | 🔵 planned | image-stack decision open ([omarchy-port.md](omarchy-port.md)) |
+| **v3** | — | 🔵 planned | image-stack decision open (see §v3.0) |
 | **v4** | — | 🔵 planned | v3 must ship first |
 
 ### Thesis check (2026-07-07)
@@ -203,7 +203,7 @@ The TUI (`scripts/tui.py`, `tool tui`) is feature-complete for v2. Everything th
 | Calibration probe (30 frames, v1) | ±20 % | ~30 s overhead | Replaces seed when available |
 | **Adaptive live** | Converges to ±10 % within first 5 % | Instant (profile seed) | **Chosen for TUI** |
 
-> **Multi-platform port (in progress, 2026-06-25):** see [omarchy-port.md](omarchy-port.md) — change log for the Mac/Ubuntu/WSL2/Omarchy targets plus the **open question** of which image-inference/dependency stack is objectively best (the PyTorch+basicsr path is the main portability blocker). Must be resolved before locking the v3 stack.
+> **Multi-platform port:** the Omarchy port is **working** — `setup.sh` is fully self-contained (project-local Python 3.12 via mise/uv, no sudo, no system packages); per-target test status below. The **open question** of which image-inference/dependency stack is objectively best moved to §v3.0 — the PyTorch+basicsr path is the main portability blocker and must be resolved before locking the v3 stack. Full port log: git history of `docs/omarchy-port.md` (removed 2026-07-07).
 
 ### Supported operating systems — test status
 
@@ -343,6 +343,33 @@ self-reference was corrected to "Owns the ship gate's legal stage."
 Exit criteria: reference job measurably faster than v2 on identical hardware; full feature parity; all integration tests pass against the Rust binary; Python scripts retired.
 
 Primary motivation is throughput — Rust eliminates Python interpreter overhead, enables zero-copy buffer passing to inference engines, and opens direct CUDA/Vulkan interop without subprocess boundaries. The Python codebase is the reference implementation for behavior; v3 is a port, not a redesign — no new features until parity is confirmed.
+
+### Open decision — image inference stack (moved from omarchy-port.md, 2026-07-07)
+
+The 2026-06 Omarchy port (dev box: Arch, system Python 3.14, RTX 3050 Laptop) exposed that the portability pain is concentrated in **one dependency choice**: the PyTorch + `basicsr` image path — cu118 torch wheels stop at CPython 3.12, and basicsr's `setup.py` breaks on 3.13+ (PEP 667). The port itself is done: `setup.sh` provisions a project-local 3.12 via mise/uv (no sudo, no system packages; `numpy<2` + `scipy<1.13` pinned in lockstep) and the suite is green on Omarchy. That was the unblock; the durable v3 stack should be an evaluated decision rather than inertia. Resolve before committing to a v3 stack. Target platforms: **Mac · Ubuntu 24.04 · WSL2 Ubuntu 24.04 · Omarchy**.
+
+**Objective criteria** (score each candidate):
+1. Portability across all 4 targets with one install path.
+2. Coupling to the system Python version (lower = better; this is what broke).
+3. Maintenance burden / upstream health (`basicsr` is effectively unmaintained).
+4. Throughput on the reference job (RTX 3050).
+5. Feature coverage — esp. GFPGAN face-enhance, tiling/VRAM control, model breadth.
+6. Output quality vs Topaz (ties to the model-quality open question below).
+
+**Decision 1 — image inference engine**
+
+| Candidate | Portability | Python coupling | Maintenance | Face-enhance | Notes |
+|---|---|---|---|---|---|
+| **Real-ESRGAN (PyTorch + basicsr)** — current | poor (torch/python pinning) | high | poor (basicsr abandoned) | ✅ GFPGAN | source of the Omarchy break |
+| **realesrgan-ncnn-vulkan** (precompiled Vulkan bin) | strong (Win/Mac/Linux bins) | **none** | ok | ❌ no GFPGAN | same models; video2x already uses NCNN/Vulkan |
+| **Arch pacman python-pytorch-cuda** | Arch-only | high (system py) | good (Arch-maintained) | ✅ | native to Omarchy, not the other 3 targets |
+| **uv/mise-managed Python 3.12 + current wheels** | strong (all 4) | decoupled | good | ✅ | keeps torch but unpins from system python — what `setup.sh` ships today |
+
+Tension: NCNN-Vulkan kills the whole Python-version problem and matches the video path, but drops GFPGAN. If face-enhance is essential, a uv-managed torch env is the portable torch route.
+
+**Decision 2 — dependency sourcing / Python management:** pinned pip wheels off system Python (broke) vs Arch pacman (Arch-only) vs **uv/mise-managed interpreter** (one path for all 4 targets, decoupled from whatever system Python each platform ships — what `setup.sh` does today). Leaning uv/mise as the cross-platform answer.
+
+**Decision 3 — video2x distribution:** AppImage covers Linux (Omarchy/Ubuntu/WSL2) but **not Mac**. Mac needs brew/source build or a different NCNN front-end. Cross-platform packaging is unsolved for the Mac target.
 
 - **ratatui TUI** — replace Textual with [ratatui](https://github.com/ratatui-org/ratatui): same panels (job queue, progress, GPU stats, log), same sidecar-JSON attach protocol, same keyboard shortcuts. **Every CLI flag and argument permutation must be reachable from the TUI** — parity with the v2 Textual TUI is the minimum bar; any flag added to the CLI must have a corresponding TUI control. Single binary entry point. Acceptance: feature-for-feature parity with the Textual TUI including full CLI surface; no Python runtime dependency.
 - **Core pipeline in Rust** — port chunked processing, resume logic, batch folder sweep, progress sidecar writer, preflight checks (disk, VRAM probe), integrity checker, and perf estimator to Rust. FFI or subprocess calls to NCNN/TensorRT stay; no rewrite of inference engines.
